@@ -415,6 +415,14 @@ st.set_page_config(
 )
 
 st.markdown("""
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-4FSKV7KFX9"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-4FSKV7KFX9');
+</script>
 <style>
 [data-testid="stSidebar"] { background: #1C2B3A; }
 [data-testid="stSidebar"] * { color: white !important; }
