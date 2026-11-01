@@ -428,6 +428,18 @@ h1, h2, h3 { color: #1C2B3A; }
 .ok  { color: #2E7D32; font-weight: bold; }
 .nok { color: #C62828; font-weight: bold; }
 div[data-testid="metric-container"] { background: #F5F5F5; border-radius: 8px; padding: 10px; }
+
+/* Masquer barre d'outils Streamlit et Manage app */
+[data-testid="stToolbar"] { display: none !important; }
+[data-testid="stMainMenu"] { display: none !important; }
+[data-testid="stAppDeployButton"] { display: none !important; }
+.stAppDeployButton { display: none !important; }
+[data-testid="stDecoration"] { display: none !important; }
+[data-testid="stStatusWidget"] { display: none !important; }
+[data-testid="manage-app-button"] { display: none !important; }
+[class*="viewerBadge"] { display: none !important; }
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
