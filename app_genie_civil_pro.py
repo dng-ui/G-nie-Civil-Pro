@@ -416,11 +416,6 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-[data-testid="stToolbar"] {visibility: hidden;}
-.viewerBadge_container__r5tak {display: none;}
-a[href*="github"] {display: none !important;}
 [data-testid="stSidebar"] { background: #1C2B3A; }
 [data-testid="stSidebar"] * { color: white !important; }
 [data-testid="stSidebar"] .stRadio label { color: white !important; }
