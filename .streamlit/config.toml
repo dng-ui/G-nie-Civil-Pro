@@ -2,7 +2,7 @@
 showSidebarNavigation = false
 
 [browser]
-gatherUsageStats = true
+gatherUsageStats = false
 
 [ui]
-hideTopBar = true
+hideTopBar = false
