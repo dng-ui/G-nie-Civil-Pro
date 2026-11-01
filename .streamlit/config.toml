@@ -1,8 +1,1 @@
-[client]
-showSidebarNavigation = false
 
-[browser]
-gatherUsageStats = false
-
-[ui]
-hideTopBar = false
