@@ -416,6 +416,15 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+#MainMenu {visibility: hidden !important; display: none !important;}
+footer {visibility: hidden !important; display: none !important;}
+[data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+[data-testid="stDecoration"] {display: none !important;}
+[data-testid="stStatusWidget"] {display: none !important;}
+.viewerBadge_container__r5tak {display: none !important;}
+.styles_viewerBadge__CvC9N {display: none !important;}
+#stDecoration {display: none !important;}
+button[kind="header"] {display: none !important;}
 [data-testid="stSidebar"] { background: #1C2B3A; }
 [data-testid="stSidebar"] * { color: white !important; }
 [data-testid="stSidebar"] .stRadio label { color: white !important; }
