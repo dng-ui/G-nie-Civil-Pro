@@ -411,14 +411,13 @@ st.set_page_config(
     page_title="Génie Civil Pro",
     page_icon="🏗️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 st.markdown("""
 <style>
-[data-testid="stSidebar"] { background: #1C2B3A; }
-[data-testid="stSidebar"] * { color: white !important; }
-[data-testid="stSidebar"] .stRadio label { color: white !important; }
+[data-testid="stSidebar"] { display: none; }
+[data-testid="collapsedControl"] { display: none; }
 .stButton > button {
     background: #E07B39; color: white; font-weight: bold;
     border: none; border-radius: 6px; width: 100%;
@@ -428,6 +427,14 @@ h1, h2, h3 { color: #1C2B3A; }
 .ok  { color: #2E7D32; font-weight: bold; }
 .nok { color: #C62828; font-weight: bold; }
 div[data-testid="metric-container"] { background: #F5F5F5; border-radius: 8px; padding: 10px; }
+.nav-bar {
+    background: #1C2B3A; padding: 12px 16px; border-radius: 10px;
+    margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 8px;
+    align-items: center;
+}
+.nav-title {
+    color: white; font-weight: bold; font-size: 16px; margin-right: 10px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -435,26 +442,28 @@ div[data-testid="metric-container"] { background: #F5F5F5; border-radius: 8px; p
 if "resultats" not in st.session_state: st.session_state.resultats = []
 if "charges"   not in st.session_state: st.session_state.charges   = {"G": 0.0, "Q": 0.0}
 if "projet_nom" not in st.session_state: st.session_state.projet_nom = "Mon Projet"
+if "page" not in st.session_state: st.session_state.page = "⚖️ Calcul G et Q"
 
-# ── SIDEBAR ──
-with st.sidebar:
-    st.markdown("## 🏗️ Génie Civil Pro")
-    st.markdown("**BAEL 91 — Mbouda, Cameroun**")
-    st.markdown("---")
-    page = st.radio("Navigation", [
-        "⚖️  Calcul G et Q",
-        "📐  Dalle",
-        "🔩  Poutre",
-        "🏛️  Poteau",
-        "🏗️  Fondation",
-        "📋  Projet Complet",
-        "📄  Note de Calcul PDF",
-    ])
-    st.markdown("---")
-    st.caption(f"📅 {datetime.now().strftime('%d/%m/%Y')}")
-    st.caption("DALOKO · +237 681 605 462")
-    st.caption("Mbouda · Région de l'Ouest")
-    st.caption(f"💾 {len(st.session_state.resultats)} calcul(s) en mémoire")
+# ── NAVIGATION EN HAUT ──
+st.markdown(f"""
+<div class="nav-bar">
+  <span class="nav-title">🏗️ Génie Civil Pro</span>
+</div>
+""", unsafe_allow_html=True)
+
+pages = [
+    "⚖️ Calcul G et Q",
+    "📐 Dalle",
+    "🔩 Poutre",
+    "🏛️ Poteau",
+    "🏗️ Fondation",
+    "📋 Projet Complet",
+    "📄 Note PDF",
+]
+
+page = st.selectbox("", pages, index=pages.index(st.session_state.page), label_visibility="collapsed")
+st.session_state.page = page
+st.markdown("---")
 
 
 # ════════════════════════════════════════════════════════════
