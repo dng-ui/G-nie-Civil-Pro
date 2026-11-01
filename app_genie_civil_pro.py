@@ -418,7 +418,6 @@ st.markdown("""
 <style>
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
-header {visibility: hidden;}
 [data-testid="stToolbar"] {visibility: hidden;}
 .viewerBadge_container__r5tak {display: none;}
 a[href*="github"] {display: none !important;}
