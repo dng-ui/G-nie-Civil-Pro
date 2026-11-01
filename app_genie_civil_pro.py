@@ -430,7 +430,7 @@ h1, h2, h3 { color: #1C2B3A; }
 div[data-testid="metric-container"] { background: #F5F5F5; border-radius: 8px; padding: 10px; }
 
 /* Masquer barre d'outils Streamlit et Manage app */
-[data-testid="stToolbar"] { display: none !important; }
+[data-testid="stToolbarActions"] { display: none !important; }
 [data-testid="stMainMenu"] { display: none !important; }
 [data-testid="stAppDeployButton"] { display: none !important; }
 .stAppDeployButton { display: none !important; }
