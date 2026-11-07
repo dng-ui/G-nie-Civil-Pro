@@ -166,6 +166,62 @@ hr { border-color: ${border} !important; }
 .ok  { color: #2E7D32; font-weight: bold; }
 .nok { color: #C62828; font-weight: bold; }
 
+/* ---------- Bouton d'ouverture du menu (flèche ») : grand et attractif ---------- */
+[data-testid="stExpandSidebarButton"],
+[data-testid="stSidebarCollapsedControl"] button,
+[data-testid="collapsedControl"] button {
+    background: ${accent} !important;
+    color: #FFFFFF !important;
+    border: 3px solid #FFFFFF !important;
+    border-radius: 999px !important;
+    min-width: 64px !important;
+    height: 56px !important;
+    padding: 0 20px 0 14px !important;
+    margin: 6px 0 0 6px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    z-index: 999999 !important;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35) !important;
+    animation: gcp-pulse 1.8s ease-in-out infinite;
+    transition: transform .15s ease-in-out, background .15s ease-in-out;
+}
+[data-testid="stExpandSidebarButton"] *,
+[data-testid="stSidebarCollapsedControl"] button *,
+[data-testid="collapsedControl"] button * {
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    font-size: 2.2rem !important;
+    font-weight: 900 !important;
+}
+[data-testid="stExpandSidebarButton"]::after,
+[data-testid="stSidebarCollapsedControl"] button::after,
+[data-testid="collapsedControl"] button::after {
+    content: "MENU";
+    color: #FFFFFF;
+    font-size: 1rem;
+    font-weight: 900;
+    letter-spacing: 1.5px;
+    margin-left: 8px;
+}
+[data-testid="stExpandSidebarButton"]:hover,
+[data-testid="stSidebarCollapsedControl"] button:hover,
+[data-testid="collapsedControl"] button:hover {
+    background: ${accent_hover} !important;
+    transform: scale(1.08);
+}
+[data-testid="stExpandSidebarButton"]:active,
+[data-testid="stSidebarCollapsedControl"] button:active,
+[data-testid="collapsedControl"] button:active {
+    transform: scale(0.95);
+}
+@keyframes gcp-pulse {
+    0%   { box-shadow: 0 6px 18px rgba(0,0,0,0.35), 0 0 0 0 ${accent}; }
+    70%  { box-shadow: 0 6px 18px rgba(0,0,0,0.35), 0 0 0 16px rgba(255,255,255,0); }
+    100% { box-shadow: 0 6px 18px rgba(0,0,0,0.35), 0 0 0 0 rgba(255,255,255,0); }
+}
+
 /* ---------- Masquer barre d'outils Streamlit et Manage app ---------- */
 [data-testid="stToolbarActions"] { display: none !important; }
 [data-testid="stMainMenu"] { display: none !important; }
