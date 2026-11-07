@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════╗
-║          GÉNIE CIVIL PRO v9 — Application Web Complète       ║
+║          GÉNIE CIVIL PRO v10 — Application Web Complète      ║
 ║          BAEL 91 — Mbouda, Cameroun                          ║
 ║          DALOKO — +237 681 605 462                           ║
 ║          Lancer : streamlit run app_genie_civil_pro.py       ║
@@ -9,6 +9,8 @@
 
 import streamlit as st
 import math
+import os
+from string import Template
 from datetime import datetime
 
 # ══════════════════════════════════════════════════════════════
@@ -41,6 +43,143 @@ CHARGES_Q = {
     "Balcon / Véranda": 3.5,
 }
 
+# Marqueur visuel des champs obligatoires (étoile rouge)
+REQ = " :red[*]"
+OPT = " *(facultatif)*"
+
+# ══════════════════════════════════════════════════════════════
+# THÈMES (le choix se fait dans la barre latérale)
+# ══════════════════════════════════════════════════════════════
+THEMES = {
+    "🔵 Bleu Ingénieur": {
+        "primary": "#1C2B3A", "accent": "#E07B39", "accent_hover": "#C8632A",
+        "bg": "#FFFFFF", "surface": "#F5F5F5", "text": "#1C2B3A", "border": "#E0E0E0",
+        "side_bg": "#1C2B3A", "side_bg2": "#26394D", "side_text": "#FFFFFF",
+    },
+    "🌙 Sombre": {
+        "primary": "#F2F4F7", "accent": "#F59E0B", "accent_hover": "#D98A06",
+        "bg": "#0F172A", "surface": "#1E293B", "text": "#E5E7EB", "border": "#334155",
+        "side_bg": "#020617", "side_bg2": "#0B1226", "side_text": "#E5E7EB",
+    },
+    "🌿 Vert Chantier": {
+        "primary": "#1B4332", "accent": "#2D9F6B", "accent_hover": "#238156",
+        "bg": "#F7FBF8", "surface": "#E6F2EA", "text": "#1B4332", "border": "#C5DFCF",
+        "side_bg": "#1B4332", "side_bg2": "#2D6A4F", "side_text": "#FFFFFF",
+    },
+    "🟠 Terre Cuite": {
+        "primary": "#7C2D12", "accent": "#EA580C", "accent_hover": "#C2410C",
+        "bg": "#FFFBF7", "surface": "#FDEBDD", "text": "#431407", "border": "#F5CBA7",
+        "side_bg": "#7C2D12", "side_bg2": "#9A3412", "side_text": "#FFFFFF",
+    },
+    "🟣 Violet Moderne": {
+        "primary": "#3B0764", "accent": "#9333EA", "accent_hover": "#7E22CE",
+        "bg": "#FDFAFF", "surface": "#F1E8FB", "text": "#3B0764", "border": "#DCC8F2",
+        "side_bg": "#3B0764", "side_bg2": "#581C87", "side_text": "#FFFFFF",
+    },
+    "⚪ Clair Minimal": {
+        "primary": "#111827", "accent": "#2563EB", "accent_hover": "#1D4ED8",
+        "bg": "#FFFFFF", "surface": "#F3F4F6", "text": "#111827", "border": "#E5E7EB",
+        "side_bg": "#F3F4F6", "side_bg2": "#E5E7EB", "side_text": "#111827",
+    },
+}
+
+CSS_TEMPLATE = Template("""
+<style>
+/* ---------- Fond général ---------- */
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+    background: ${bg} !important;
+}
+.stApp p, .stApp li, .stApp label, .stApp summary,
+[data-testid="stMetricLabel"], [data-testid="stMetricValue"],
+[data-testid="stCaptionContainer"] {
+    color: ${text};
+}
+
+/* ---------- Titres en GRAS ---------- */
+h1, h2, h3, h4,
+[data-testid="stHeading"] h1, [data-testid="stHeading"] h2, [data-testid="stHeading"] h3 {
+    font-weight: 800 !important;
+    color: ${primary} !important;
+    letter-spacing: -0.2px;
+}
+h1 { border-bottom: 4px solid ${accent}; padding-bottom: 8px; }
+[data-testid="stMetricLabel"] p { font-weight: 700 !important; }
+[data-testid="stMetricValue"] { font-weight: 800 !important; }
+[data-testid="stExpander"] summary p { font-weight: 700 !important; }
+label p { font-weight: 600 !important; }
+
+/* ---------- Barre latérale ---------- */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, ${side_bg} 0%, ${side_bg2} 100%) !important;
+}
+[data-testid="stSidebar"] p, [data-testid="stSidebar"] label,
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] small, [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+    color: ${side_text} !important;
+}
+[data-testid="stSidebar"] .stRadio label {
+    padding: 6px 8px; border-radius: 8px;
+}
+[data-testid="stSidebar"] .stRadio label:hover { background: rgba(255,255,255,0.10); }
+[data-testid="stSidebar"] [data-baseweb="select"] > div,
+[data-testid="stSidebar"] [data-baseweb="input"] {
+    background: rgba(255,255,255,0.12) !important;
+    border: 1px solid rgba(255,255,255,0.25) !important;
+}
+[data-testid="stSidebar"] input, [data-testid="stSidebar"] [data-baseweb="select"] * {
+    color: ${side_text} !important;
+}
+
+/* ---------- Boutons ---------- */
+.stButton > button, .stDownloadButton > button {
+    background: ${accent}; color: white !important; font-weight: 700;
+    border: none; border-radius: 8px; width: 100%; padding: 0.55rem 1rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15); transition: all .15s ease-in-out;
+}
+.stButton > button:hover, .stDownloadButton > button:hover {
+    background: ${accent_hover}; color: white !important; transform: translateY(-1px);
+}
+.stButton > button p, .stDownloadButton > button p { color: white !important; font-weight: 700; }
+
+/* ---------- Champs de saisie ---------- */
+.stApp input, .stApp textarea,
+.stApp [data-baseweb="select"] > div, .stApp [data-baseweb="input"],
+.stApp [data-baseweb="base-input"] {
+    background: ${surface} !important; color: ${text} !important;
+}
+.stApp [data-baseweb="select"] * { color: ${text}; }
+
+/* ---------- Cartes / métriques ---------- */
+div[data-testid="metric-container"] {
+    background: ${surface}; border: 1px solid ${border};
+    border-left: 5px solid ${accent}; border-radius: 10px; padding: 12px;
+}
+[data-testid="stExpander"] {
+    border: 1px solid ${border}; border-radius: 10px; background: ${surface};
+}
+hr { border-color: ${border} !important; }
+
+.legende-requis {
+    background: ${surface}; border: 1px dashed ${accent}; border-radius: 8px;
+    padding: 6px 12px; font-size: 0.9rem; margin-bottom: 10px;
+}
+.ok  { color: #2E7D32; font-weight: bold; }
+.nok { color: #C62828; font-weight: bold; }
+
+/* ---------- Masquer barre d'outils Streamlit et Manage app ---------- */
+[data-testid="stToolbarActions"] { display: none !important; }
+[data-testid="stMainMenu"] { display: none !important; }
+[data-testid="stAppDeployButton"] { display: none !important; }
+.stAppDeployButton { display: none !important; }
+[data-testid="stDecoration"] { display: none !important; }
+[data-testid="stStatusWidget"] { display: none !important; }
+[data-testid="manage-app-button"] { display: none !important; }
+[class*="viewerBadge"] { display: none !important; }
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+</style>
+""")
+
 # ══════════════════════════════════════════════════════════════
 # FONCTIONS UTILITAIRES
 # ══════════════════════════════════════════════════════════════
@@ -70,7 +209,7 @@ def barres_dalle(As):
     return f"As={round(As, 2)} cm²/ml"
 
 # ══════════════════════════════════════════════════════════════
-# MOTEUR DE CALCUL BAEL 91
+# MOTEUR DE CALCUL BAEL 91  (LOGIQUE INCHANGÉE)
 # ══════════════════════════════════════════════════════════════
 
 def calc_dalle(lx, ly, G, Q, beton="C25/30", acier="HA400"):
@@ -321,7 +460,20 @@ def generer_pdf(resultats, projet_nom, beton, acier):
         for el in resultats:
             t = el.get("type", "")
 
-            if t == "DALLE":
+            if t == "CHARGES":
+                c.append(Paragraph("CHARGES G ET Q — Descente de charges de plancher (BAEL 91)", sH))
+                data = [["Composant", "G (kN/m²)"]]
+                for comp in el["composants"]:
+                    data.append([comp["nom"], str(comp["G"])])
+                data += [
+                    ["G total", f"{el['G']} kN/m²"],
+                    [f"Q — {el['usage']}", f"{el['Q']} kN/m²"],
+                    ["pu ELU = 1.35G + 1.5Q", f"{el['pu']} kN/m²"],
+                    ["pser ELS = G + Q", f"{el['pser']} kN/m²"],
+                ]
+                c.append(tab(data, [11*cm, 6*cm]))
+
+            elif t == "DALLE":
                 c.append(Paragraph("DALLE — Méthode Rankine-Grashoff (BAEL 91)", sH))
                 data = [["Paramètre", "Valeur"],
                     ["Dimensions", f"lx={el['lx']}m × ly={el['ly']}m  —  ρ={el['rho']}"],
@@ -404,6 +556,22 @@ def generer_pdf(resultats, projet_nom, beton, acier):
         return None
 
 
+def pdf_bytes(elements, nom, beton, acier):
+    """Génère le PDF et le renvoie sous forme d'octets (pour download_button)."""
+    chemin = generer_pdf(elements, nom, beton, acier)
+    if not chemin:
+        return None
+    try:
+        with open(chemin, "rb") as f:
+            data = f.read()
+    finally:
+        try:
+            os.remove(chemin)
+        except OSError:
+            pass
+    return data
+
+
 # ══════════════════════════════════════════════════════════════
 # CONFIGURATION STREAMLIT
 # ══════════════════════════════════════════════════════════════
@@ -414,46 +582,74 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-st.markdown("""
-<style>
-[data-testid="stSidebar"] { background: #1C2B3A; }
-[data-testid="stSidebar"] * { color: white !important; }
-[data-testid="stSidebar"] .stRadio label { color: white !important; }
-.stButton > button {
-    background: #E07B39; color: white; font-weight: bold;
-    border: none; border-radius: 6px; width: 100%;
-}
-.stButton > button:hover { background: #C8632A; color: white; }
-h1, h2, h3 { color: #1C2B3A; }
-.ok  { color: #2E7D32; font-weight: bold; }
-.nok { color: #C62828; font-weight: bold; }
-div[data-testid="metric-container"] { background: #F5F5F5; border-radius: 8px; padding: 10px; }
-
-/* Masquer barre d'outils Streamlit et Manage app */
-[data-testid="stToolbarActions"] { display: none !important; }
-[data-testid="stMainMenu"] { display: none !important; }
-[data-testid="stAppDeployButton"] { display: none !important; }
-.stAppDeployButton { display: none !important; }
-[data-testid="stDecoration"] { display: none !important; }
-[data-testid="stStatusWidget"] { display: none !important; }
-[data-testid="manage-app-button"] { display: none !important; }
-[class*="viewerBadge"] { display: none !important; }
-#MainMenu { visibility: hidden; }
-footer { visibility: hidden; }
-</style>
-""", unsafe_allow_html=True)
-
 # ── SESSION STATE ──
-if "resultats" not in st.session_state: st.session_state.resultats = []
-if "charges"   not in st.session_state: st.session_state.charges   = {"G": 0.0, "Q": 0.0}
+if "resultats"  not in st.session_state: st.session_state.resultats  = []
+if "charges"    not in st.session_state: st.session_state.charges    = {"G": 0.0, "Q": 0.0}
 if "projet_nom" not in st.session_state: st.session_state.projet_nom = "Mon Projet"
+if "last"       not in st.session_state: st.session_state.last       = {}
+if "theme"      not in st.session_state: st.session_state.theme      = list(THEMES.keys())[0]
+
+
+def nom_projet():
+    return (st.session_state.projet_nom or "").strip()
+
+
+def projet_valide():
+    """Vérifie le champ obligatoire 'Nom du projet'."""
+    if not nom_projet():
+        st.error("⚠️ Le **nom du projet** (barre latérale) est obligatoire avant de lancer un calcul.")
+        return False
+    return True
+
+
+def legende_requis():
+    st.markdown(
+        "<div class='legende-requis'>Les champs marqués d'une <b style='color:#D32F2F'>*</b> "
+        "sont <b>obligatoires</b>. Les autres sont facultatifs.</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def entete(titre, description):
+    st.title(titre)
+    st.caption(description)
+    legende_requis()
+
+
+def bouton_pdf(cle, elements, beton, acier, label="📥 Télécharger la note de calcul (PDF)"):
+    """Bouton de téléchargement PDF direct (présent dans chaque onglet)."""
+    data = pdf_bytes(elements, nom_projet() or "Mon Projet", beton, acier)
+    if data:
+        st.download_button(
+            label=label,
+            data=data,
+            file_name=f"note_calcul_{cle}_{(nom_projet() or 'projet').replace(' ', '_')}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            key=f"dl_{cle}",
+        )
+    else:
+        st.warning("Le PDF n'a pas pu être généré. Vérifiez que reportlab est installé : pip install reportlab")
+
+
+def placeholder_resultat():
+    st.info("👈 Renseignez les paramètres puis cliquez sur le bouton de calcul pour afficher les résultats.")
+
 
 # ── SIDEBAR ──
 with st.sidebar:
     st.markdown("## 🏗️ Génie Civil Pro")
     st.markdown("**BAEL 91 — Mbouda, Cameroun**")
     st.markdown("---")
-    page = st.radio("Navigation", [
+
+    st.selectbox("🎨 **Thème de l'application**", list(THEMES.keys()), key="theme")
+
+    st.text_input(
+        "📁 **Nom du projet** :red[*]", key="projet_nom",
+        help="Obligatoire : utilisé dans tous les PDF téléchargés.",
+    )
+    st.markdown("---")
+    page = st.radio("**Navigation**", [
         "⚖️  Calcul G et Q",
         "📐  Dalle",
         "🔩  Poutre",
@@ -468,13 +664,16 @@ with st.sidebar:
     st.caption("Mbouda · Région de l'Ouest")
     st.caption(f"💾 {len(st.session_state.resultats)} calcul(s) en mémoire")
 
+# Application du thème choisi
+st.markdown(CSS_TEMPLATE.substitute(THEMES[st.session_state.theme]), unsafe_allow_html=True)
+
 
 # ════════════════════════════════════════════════════════════
 # PAGE 1 — CALCUL G ET Q
 # ════════════════════════════════════════════════════════════
 if page == "⚖️  Calcul G et Q":
-    st.title("⚖️ Calcul des Charges G et Q")
-    st.write("Calculez automatiquement les charges permanentes **G** et d'exploitation **Q** selon BAEL 91.")
+    entete("⚖️ Calcul des Charges G et Q",
+           "Calculez automatiquement les charges permanentes G et d'exploitation Q selon BAEL 91.")
 
     col1, col2 = st.columns(2)
 
@@ -482,47 +681,47 @@ if page == "⚖️  Calcul G et Q":
         st.subheader("📦 Charges permanentes G (kN/m²)")
         composants = []
 
-        type_plancher = st.selectbox("Type de plancher", ["Corps creux", "Dalle pleine béton armé"])
+        type_plancher = st.selectbox("Type de plancher" + REQ, ["Corps creux", "Dalle pleine béton armé"])
         if type_plancher == "Corps creux":
-            cc = st.selectbox("Type corps creux", list(CORPS_CREUX.keys()), index=2)
+            cc = st.selectbox("Type corps creux" + REQ, list(CORPS_CREUX.keys()), index=2)
             composants.append({"nom": f"Corps creux {cc}", "G": CORPS_CREUX[cc]})
         else:
-            ep = st.number_input("Épaisseur dalle (cm)", 10, 30, 14)
+            ep = st.number_input("Épaisseur dalle (cm)" + REQ, 10, 30, 14)
             composants.append({"nom": f"Dalle BA {ep}cm", "G": round(25.0 * ep / 100, 3)})
 
-        ep_chape = st.number_input("Chape mortier (cm)", 0, 10, 4)
+        ep_chape = st.number_input("Chape mortier (cm)" + OPT, 0, 10, 4)
         if ep_chape > 0:
             composants.append({"nom": f"Chape mortier {ep_chape}cm", "G": round(20.0 * ep_chape / 100, 3)})
 
-        ep_carr = st.number_input("Carrelage (cm)", 0, 5, 2)
+        ep_carr = st.number_input("Carrelage (cm)" + OPT, 0, 5, 2)
         if ep_carr > 0:
             composants.append({"nom": f"Carrelage {ep_carr}cm", "G": round(20.0 * ep_carr / 100, 3)})
 
-        type_cl = st.selectbox("Cloisons", ["Légères (0.75)", "Parpaing 10cm (1.20)", "Parpaing 15cm (1.60)", "Brique 10cm (1.40)", "Aucune (0)"])
+        type_cl = st.selectbox("Cloisons" + OPT, ["Légères (0.75)", "Parpaing 10cm (1.20)", "Parpaing 15cm (1.60)", "Brique 10cm (1.40)", "Aucune (0)"])
         G_cl = {"Légères (0.75)": 0.75, "Parpaing 10cm (1.20)": 1.20, "Parpaing 15cm (1.60)": 1.60, "Brique 10cm (1.40)": 1.40, "Aucune (0)": 0.0}[type_cl]
         if G_cl > 0:
             composants.append({"nom": f"Cloisons {type_cl}", "G": G_cl})
 
-        ep_end = st.number_input("Enduit plafond (cm)", 0.0, 5.0, 1.5)
+        ep_end = st.number_input("Enduit plafond (cm)" + OPT, 0.0, 5.0, 1.5)
         if ep_end > 0:
             composants.append({"nom": f"Enduit plafond {ep_end}cm", "G": round(18.0 * ep_end / 100, 3)})
 
-        fp = st.selectbox("Faux-plafond", ["Enduit (0.20)", "Plâtre (0.15)", "Bois (0.10)", "Aucun (0)"])
+        fp = st.selectbox("Faux-plafond" + OPT, ["Enduit (0.20)", "Plâtre (0.15)", "Bois (0.10)", "Aucun (0)"])
         G_fp = {"Enduit (0.20)": 0.20, "Plâtre (0.15)": 0.15, "Bois (0.10)": 0.10, "Aucun (0)": 0.0}[fp]
         if G_fp > 0:
             composants.append({"nom": f"Faux-plafond {fp}", "G": G_fp})
 
-        toiture = st.checkbox("Ajouter toiture bois + tôle ?")
+        toiture = st.checkbox("Ajouter toiture bois + tôle ?" + OPT)
         if toiture:
-            type_ch = st.selectbox("Charpente bois", ["Légère (0.15)", "Standard (0.25)", "Lourde (0.40)"])
+            type_ch = st.selectbox("Charpente bois" + REQ, ["Légère (0.15)", "Standard (0.25)", "Lourde (0.40)"])
             G_ch = {"Légère (0.15)": 0.15, "Standard (0.25)": 0.25, "Lourde (0.40)": 0.40}[type_ch]
             composants.append({"nom": f"Charpente bois {type_ch}", "G": G_ch})
-            ep_tole = st.number_input("Épaisseur tôle (mm)", 0.4, 1.5, 0.63, step=0.01)
+            ep_tole = st.number_input("Épaisseur tôle (mm)" + REQ, 0.4, 1.5, 0.63, step=0.01)
             composants.append({"nom": f"Tôle galvanisée {ep_tole}mm", "G": round(77.0 * ep_tole / 1000, 3)})
 
         G_total = round(sum(c["G"] for c in composants), 3)
         st.subheader("🏃 Charge d'exploitation Q (kN/m²)")
-        usage = st.selectbox("Usage du bâtiment", list(CHARGES_Q.keys()))
+        usage = st.selectbox("Usage du bâtiment" + REQ, list(CHARGES_Q.keys()))
         Q_val = CHARGES_Q[usage]
         st.info(f"Q = **{Q_val} kN/m²** ({usage})")
 
@@ -537,37 +736,55 @@ if page == "⚖️  Calcul G et Q":
         c1, c2 = st.columns(2)
         c1.metric("G total (kN/m²)", G_total)
         c2.metric("Q (kN/m²)", Q_val)
-        st.metric("pu ELU = 1.35G + 1.5Q  (kN/m²)", round(1.35 * G_total + 1.5 * Q_val, 3))
-        st.metric("pser ELS = G + Q  (kN/m²)", round(G_total + Q_val, 3))
+        pu_gq = round(1.35 * G_total + 1.5 * Q_val, 3)
+        pser_gq = round(G_total + Q_val, 3)
+        st.metric("pu ELU = 1.35G + 1.5Q  (kN/m²)", pu_gq)
+        st.metric("pser ELS = G + Q  (kN/m²)", pser_gq)
 
         if st.button("✅ Utiliser ces valeurs dans les calculs"):
             st.session_state.charges = {"G": G_total, "Q": Q_val}
+            st.toast("Charges enregistrées", icon="✅")
             st.success(f"✅ G = {G_total} kN/m² et Q = {Q_val} kN/m² enregistrés !")
+
+        st.markdown("---")
+        el_charges = {
+            "type": "CHARGES", "composants": composants, "usage": usage,
+            "G": G_total, "Q": Q_val, "pu": pu_gq, "pser": pser_gq,
+        }
+        bouton_pdf("charges", [el_charges], "—", "—")
 
 
 # ════════════════════════════════════════════════════════════
 # PAGE 2 — DALLE
 # ════════════════════════════════════════════════════════════
 elif page == "📐  Dalle":
-    st.title("📐 Calcul de Dalle — BAEL 91 (Pivot A)")
+    entete("📐 Calcul de Dalle — BAEL 91 (Pivot A)",
+           "Dimensionnement d'une dalle pleine sur appuis par la méthode Rankine-Grashoff.")
     col1, col2 = st.columns([1, 1.3])
 
     with col1:
         st.subheader("Paramètres")
-        lx    = st.number_input("Petite portée lx (m)", 1.0, 15.0, 4.2, 0.1)
-        ly    = st.number_input("Grande portée ly (m)", lx, 20.0, 5.1, 0.1)
-        G_d   = st.number_input("G (kN/m²)", 0.5, 30.0,
+        lx    = st.number_input("Petite portée lx (m)" + REQ, 1.0, 15.0, 4.2, 0.1)
+        ly    = st.number_input("Grande portée ly (m)" + REQ, lx, 20.0, 5.1, 0.1)
+        G_d   = st.number_input("G (kN/m²)" + REQ, 0.5, 30.0,
                     float(st.session_state.charges["G"]) if st.session_state.charges["G"] > 0 else 5.5, 0.1)
-        Q_d   = st.number_input("Q (kN/m²)", 0.5, 10.0,
+        Q_d   = st.number_input("Q (kN/m²)" + REQ, 0.5, 10.0,
                     float(st.session_state.charges["Q"]) if st.session_state.charges["Q"] > 0 else 2.0, 0.1)
-        beton = st.selectbox("Béton", list(BETONS.keys()), index=1, key="b_d")
-        acier = st.selectbox("Acier", list(ACIERS.keys()), index=1, key="a_d")
+        beton = st.selectbox("Béton" + REQ, list(BETONS.keys()), index=1, key="b_d")
+        acier = st.selectbox("Acier" + REQ, list(ACIERS.keys()), index=1, key="a_d")
         calc  = st.button("⚙️ CALCULER LA DALLE")
 
     with col2:
         st.subheader("Résultats")
-        if calc:
+        if calc and projet_valide():
             r = calc_dalle(lx, ly, G_d, Q_d, beton, acier)
+            r["type"] = "DALLE"
+            st.session_state.resultats.append(r)
+            st.session_state.last["dalle"] = r
+            st.toast("Dalle calculée", icon="✅")
+
+        r = st.session_state.last.get("dalle")
+        if r:
             st.success(f"✅ Dalle dimensionnée — épaisseur = **{r['h']} cm**")
             c1, c2, c3 = st.columns(3)
             c1.metric("Épaisseur", f"{r['h']} cm")
@@ -587,32 +804,41 @@ elif page == "📐  Dalle":
                 else:
                     st.error("✗ État limite de service NON SATISFAIT")
 
-            r["type"] = "DALLE"
-            st.session_state.resultats.append(r)
-            st.info("💾 Résultat sauvegardé pour la note de calcul PDF")
+            st.caption("💾 Résultat sauvegardé pour la note de calcul globale")
+            bouton_pdf("dalle", [r], r["beton"], r["acier"])
+        else:
+            placeholder_resultat()
 
 
 # ════════════════════════════════════════════════════════════
 # PAGE 3 — POUTRE
 # ════════════════════════════════════════════════════════════
 elif page == "🔩  Poutre":
-    st.title("🔩 Calcul de Poutre — BAEL 91 (Pivot B)")
+    entete("🔩 Calcul de Poutre — BAEL 91 (Pivot B)",
+           "Dimensionnement d'une poutre isostatique sous charge uniformément répartie.")
     col1, col2 = st.columns([1, 1.3])
 
     with col1:
         st.subheader("Paramètres")
-        portee = st.number_input("Portée (m)", 1.0, 20.0, 5.0, 0.1)
-        G_ml   = st.number_input("G réparti (kN/m)", 0.0, 200.0, 22.0, 0.5)
-        Q_ml   = st.number_input("Q réparti (kN/m)", 0.0, 100.0, 8.0, 0.5)
-        larg   = st.number_input("Largeur imposée b (cm)", 15, 60, 20)
-        beton  = st.selectbox("Béton", list(BETONS.keys()), index=1, key="b_p")
-        acier  = st.selectbox("Acier", list(ACIERS.keys()), index=1, key="a_p")
+        portee = st.number_input("Portée (m)" + REQ, 1.0, 20.0, 5.0, 0.1)
+        G_ml   = st.number_input("G réparti (kN/m)" + REQ, 0.0, 200.0, 22.0, 0.5)
+        Q_ml   = st.number_input("Q réparti (kN/m)" + REQ, 0.0, 100.0, 8.0, 0.5)
+        larg   = st.number_input("Largeur imposée b (cm)" + REQ, 15, 60, 20)
+        beton  = st.selectbox("Béton" + REQ, list(BETONS.keys()), index=1, key="b_p")
+        acier  = st.selectbox("Acier" + REQ, list(ACIERS.keys()), index=1, key="a_p")
         calc   = st.button("⚙️ CALCULER LA POUTRE")
 
     with col2:
         st.subheader("Résultats")
-        if calc:
+        if calc and projet_valide():
             r = calc_poutre(portee, G_ml, Q_ml, larg, beton, acier)
+            r["type"] = "POUTRE"
+            st.session_state.resultats.append(r)
+            st.session_state.last["poutre"] = r
+            st.toast("Poutre calculée", icon="✅")
+
+        r = st.session_state.last.get("poutre")
+        if r:
             st.success(f"✅ Section retenue : **{r['larg']} × {r['h']} cm**")
             c1, c2, c3 = st.columns(3)
             c1.metric("Section", f"{r['larg']}×{r['h']} cm")
@@ -624,36 +850,45 @@ elif page == "🔩  Poutre":
                 st.success(f"✓ Cisaillement OK : τu = {r['tau']} ≤ τlim = {r['tau_lim']} MPa")
             else:
                 st.error(f"✗ Cisaillement NON OK : τu = {r['tau']} > τlim = {r['tau_lim']} MPa")
-            r["type"] = "POUTRE"
-            st.session_state.resultats.append(r)
-            st.info("💾 Résultat sauvegardé")
+            st.caption("💾 Résultat sauvegardé pour la note de calcul globale")
+            bouton_pdf("poutre", [r], r["beton"], r["acier"])
+        else:
+            placeholder_resultat()
 
 
 # ════════════════════════════════════════════════════════════
 # PAGE 4 — POTEAU
 # ════════════════════════════════════════════════════════════
 elif page == "🏛️  Poteau":
-    st.title("🏛️ Calcul de Poteau — BAEL 91")
+    entete("🏛️ Calcul de Poteau — BAEL 91",
+           "Dimensionnement d'un poteau en compression centrée (section carrée ou rectangulaire).")
     col1, col2 = st.columns([1, 1.3])
 
     with col1:
         st.subheader("Paramètres")
-        type_pot = st.radio("Type de section", ["Carré (auto-dimensionné)", "Rectangulaire (imposé)"])
+        type_pot = st.radio("Type de section" + REQ, ["Carré (auto-dimensionné)", "Rectangulaire (imposé)"])
         b_cm = h_cm_p = None
         if "Rectangulaire" in type_pot:
-            b_cm   = st.number_input("b (petite dimension, cm)", 15, 100, 20)
-            h_cm_p = st.number_input("h (grande dimension, cm)", b_cm, 150, 30)
-        h_libre = st.number_input("Hauteur libre (m)", 2.0, 10.0, 3.2, 0.1)
-        G_pot   = st.number_input("G cumulé (kN)", 0.0, 5000.0, 180.0, 5.0)
-        Q_pot   = st.number_input("Q cumulé (kN)", 0.0, 3000.0, 45.0, 5.0)
-        beton   = st.selectbox("Béton", list(BETONS.keys()), index=1, key="b_po")
-        acier   = st.selectbox("Acier", list(ACIERS.keys()), index=1, key="a_po")
+            b_cm   = st.number_input("b (petite dimension, cm)" + REQ, 15, 100, 20)
+            h_cm_p = st.number_input("h (grande dimension, cm)" + REQ, b_cm, 150, 30)
+        h_libre = st.number_input("Hauteur libre (m)" + REQ, 2.0, 10.0, 3.2, 0.1)
+        G_pot   = st.number_input("G cumulé (kN)" + REQ, 0.0, 5000.0, 180.0, 5.0)
+        Q_pot   = st.number_input("Q cumulé (kN)" + REQ, 0.0, 3000.0, 45.0, 5.0)
+        beton   = st.selectbox("Béton" + REQ, list(BETONS.keys()), index=1, key="b_po")
+        acier   = st.selectbox("Acier" + REQ, list(ACIERS.keys()), index=1, key="a_po")
         calc    = st.button("⚙️ CALCULER LE POTEAU")
 
     with col2:
         st.subheader("Résultats")
-        if calc:
+        if calc and projet_valide():
             r = calc_poteau(h_libre, G_pot, Q_pot, beton, acier, b_cm, h_cm_p)
+            r["type"] = "POTEAU RECT" if r.get("rect") else "POTEAU"
+            st.session_state.resultats.append(r)
+            st.session_state.last["poteau"] = r
+            st.toast("Poteau calculé", icon="✅")
+
+        r = st.session_state.last.get("poteau")
+        if r:
             sect = f"{r['b_cm']}×{r['h_cm']} cm" if r.get("rect") else f"{r['cote']}×{r['cote']} cm"
             st.success(f"✅ Section retenue : **{sect}**")
             c1, c2, c3 = st.columns(3)
@@ -672,34 +907,43 @@ elif page == "🏛️  Poteau":
                 st.success(f"✓ ELS : σbc = {r['sbc']} ≤ {r['sbc_lim']} MPa")
             else:
                 st.error(f"✗ ELS : σbc = {r['sbc']} > {r['sbc_lim']} MPa")
-            r["type"] = "POTEAU RECT" if r.get("rect") else "POTEAU"
-            st.session_state.resultats.append(r)
-            st.info("💾 Résultat sauvegardé")
+            st.caption("💾 Résultat sauvegardé pour la note de calcul globale")
+            bouton_pdf("poteau", [r], r["beton"], r["acier"])
+        else:
+            placeholder_resultat()
 
 
 # ════════════════════════════════════════════════════════════
 # PAGE 5 — FONDATION
 # ════════════════════════════════════════════════════════════
 elif page == "🏗️  Fondation":
-    st.title("🏗️ Fondation Superficielle — Méthode des bielles (BAEL 91)")
+    entete("🏗️ Fondation Superficielle — Méthode des bielles (BAEL 91)",
+           "Dimensionnement d'une semelle isolée sous poteau.")
     col1, col2 = st.columns([1, 1.3])
 
     with col1:
         st.subheader("Paramètres")
-        G_f      = st.number_input("G cumulé (kN)", 0.0, 5000.0, 180.0, 5.0)
-        Q_f      = st.number_input("Q cumulé (kN)", 0.0, 3000.0, 45.0, 5.0)
-        cote_pot = st.number_input("Côté poteau (cm)", 15, 100, 25)
-        q_sol    = st.number_input("Contrainte sol (kPa)", 50.0, 2000.0, 200.0, 10.0)
-        type_sol = st.radio("Type contrainte sol", ["admissible", "rupture"])
+        G_f      = st.number_input("G cumulé (kN)" + REQ, 0.0, 5000.0, 180.0, 5.0)
+        Q_f      = st.number_input("Q cumulé (kN)" + REQ, 0.0, 3000.0, 45.0, 5.0)
+        cote_pot = st.number_input("Côté poteau (cm)" + REQ, 15, 100, 25)
+        q_sol    = st.number_input("Contrainte sol (kPa)" + REQ, 50.0, 2000.0, 200.0, 10.0)
+        type_sol = st.radio("Type contrainte sol" + REQ, ["admissible", "rupture"])
         st.caption("Admissible : valeur déjà divisée par coeff sécurité\nRupture : l'outil divise par 2 automatiquement")
-        beton    = st.selectbox("Béton", list(BETONS.keys()), index=1, key="b_f")
-        acier    = st.selectbox("Acier", list(ACIERS.keys()), index=1, key="a_f")
+        beton    = st.selectbox("Béton" + REQ, list(BETONS.keys()), index=1, key="b_f")
+        acier    = st.selectbox("Acier" + REQ, list(ACIERS.keys()), index=1, key="a_f")
         calc     = st.button("⚙️ CALCULER LA FONDATION")
 
     with col2:
         st.subheader("Résultats")
-        if calc:
+        if calc and projet_valide():
             r = calc_fondation(G_f, Q_f, cote_pot, q_sol, beton, acier, type_sol)
+            r["type"] = "FONDATION"
+            st.session_state.resultats.append(r)
+            st.session_state.last["fondation"] = r
+            st.toast("Fondation calculée", icon="✅")
+
+        r = st.session_state.last.get("fondation")
+        if r:
             st.success(f"✅ Semelle : **{r['cote']}×{r['cote']}×{r['h']} cm**")
             c1, c2, c3 = st.columns(3)
             c1.metric("Semelle", f"{r['cote']}×{r['cote']} cm")
@@ -711,41 +955,43 @@ elif page == "🏗️  Fondation":
                 st.success(f"✓ Sol OK : q_eff = {r['q_eff']} ≤ qu = {r['qu']} kPa")
             else:
                 st.error(f"✗ Sol NON OK : q_eff = {r['q_eff']} > qu = {r['qu']} kPa")
-            r["type"] = "FONDATION"
-            st.session_state.resultats.append(r)
-            st.info("💾 Résultat sauvegardé")
+            st.caption("💾 Résultat sauvegardé pour la note de calcul globale")
+            bouton_pdf("fondation", [r], r["beton"], r["acier"])
+        else:
+            placeholder_resultat()
 
 
 # ════════════════════════════════════════════════════════════
 # PAGE 6 — PROJET COMPLET
 # ════════════════════════════════════════════════════════════
 elif page == "📋  Projet Complet":
-    st.title("📋 Projet Complet — Calcul automatique")
-    st.session_state.projet_nom = st.text_input("Nom du projet", st.session_state.projet_nom)
+    entete("📋 Projet Complet — Calcul automatique",
+           "Dimensionne d'un seul coup la dalle, la poutre, le poteau et la fondation.")
+    st.info(f"📁 Projet : **{nom_projet() or '— à renseigner dans la barre latérale —'}**")
 
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Paramètres généraux")
-        n_niv   = st.number_input("Nombre de niveaux (RDC inclus)", 1, 10, 3)
-        lx_p    = st.number_input("Portée lx (m)", 2.0, 15.0, 4.2, 0.1)
-        ly_p    = st.number_input("Portée ly (m)", lx_p, 20.0, 5.1, 0.1)
-        h_niv   = st.number_input("Hauteur par niveau (m)", 2.5, 5.0, 3.2, 0.1)
-        G_proj  = st.number_input("G dalle (kN/m²)", 0.5, 30.0, 5.5, 0.1)
-        Q_proj  = st.number_input("Q dalle (kN/m²)", 0.5, 10.0, 2.0, 0.1)
-        q_sol_p = st.number_input("Contrainte sol (kPa)", 50.0, 2000.0, 200.0, 10.0)
-        type_sol_p = st.radio("Type contrainte sol", ["admissible", "rupture"])
-        beton_p = st.selectbox("Béton", list(BETONS.keys()), index=1, key="b_pr")
-        acier_p = st.selectbox("Acier", list(ACIERS.keys()), index=1, key="a_pr")
-        type_pot_p = st.radio("Poteau", ["Carré", "Rectangulaire"])
+        n_niv   = st.number_input("Nombre de niveaux (RDC inclus)" + REQ, 1, 10, 3)
+        lx_p    = st.number_input("Portée lx (m)" + REQ, 2.0, 15.0, 4.2, 0.1)
+        ly_p    = st.number_input("Portée ly (m)" + REQ, lx_p, 20.0, 5.1, 0.1)
+        h_niv   = st.number_input("Hauteur par niveau (m)" + REQ, 2.5, 5.0, 3.2, 0.1)
+        G_proj  = st.number_input("G dalle (kN/m²)" + REQ, 0.5, 30.0, 5.5, 0.1)
+        Q_proj  = st.number_input("Q dalle (kN/m²)" + REQ, 0.5, 10.0, 2.0, 0.1)
+        q_sol_p = st.number_input("Contrainte sol (kPa)" + REQ, 50.0, 2000.0, 200.0, 10.0)
+        type_sol_p = st.radio("Type contrainte sol" + REQ, ["admissible", "rupture"])
+        beton_p = st.selectbox("Béton" + REQ, list(BETONS.keys()), index=1, key="b_pr")
+        acier_p = st.selectbox("Acier" + REQ, list(ACIERS.keys()), index=1, key="a_pr")
+        type_pot_p = st.radio("Poteau" + REQ, ["Carré", "Rectangulaire"])
         b_p = h_p = None
         if type_pot_p == "Rectangulaire":
-            b_p = st.number_input("b poteau (cm)", 15, 100, 20)
-            h_p = st.number_input("h poteau (cm)", b_p, 150, 30)
+            b_p = st.number_input("b poteau (cm)" + REQ, 15, 100, 20)
+            h_p = st.number_input("h poteau (cm)" + REQ, b_p, 150, 30)
         calc_p = st.button("⚙️ CALCULER TOUT LE PROJET")
 
     with col2:
         st.subheader("Résultats")
-        if calc_p:
+        if calc_p and projet_valide():
             S_trib = (lx_p / 2) * (ly_p / 2)
             G_pot_p = G_proj * S_trib * n_niv
             Q_pot_p = Q_proj * S_trib * n_niv
@@ -760,6 +1006,15 @@ elif page == "📋  Projet Complet":
                 r["type"] = t
                 st.session_state.resultats.append(r)
 
+            st.session_state.last["projet"] = {
+                "rd": rd, "rp": rp, "rpo": rpo, "rf": rf,
+                "beton": beton_p, "acier": acier_p,
+            }
+            st.toast("Projet complet calculé", icon="✅")
+
+        pj = st.session_state.last.get("projet")
+        if pj:
+            rd, rp, rpo, rf = pj["rd"], pj["rp"], pj["rpo"], pj["rf"]
             st.success("✅ Projet calculé complet !")
 
             sect = f"{rpo['b_cm']}×{rpo['h_cm']}cm" if rpo.get("rect") else f"{rpo['cote']}×{rpo['cote']}cm"
@@ -770,14 +1025,18 @@ elif page == "📋  Projet Complet":
             col_a.metric("Poteau", sect)
             col_b.metric("Fondation", f"{rf['cote']}×{rf['cote']}×{rf['h']}cm")
 
-            st.info("👉 Allez dans **Note de Calcul PDF** pour télécharger le rapport complet.")
+            bouton_pdf("projet", [rd, rp, rpo, rf], pj["beton"], pj["acier"],
+                       label="📥 Télécharger la note de calcul du projet (PDF)")
+        else:
+            placeholder_resultat()
 
 
 # ════════════════════════════════════════════════════════════
 # PAGE 7 — NOTE DE CALCUL PDF
 # ════════════════════════════════════════════════════════════
 elif page == "📄  Note de Calcul PDF":
-    st.title("📄 Note de Calcul — Export PDF")
+    entete("📄 Note de Calcul — Export PDF",
+           "Regroupe tous les calculs effectués pendant la session dans un seul rapport.")
 
     if not st.session_state.resultats:
         st.warning("⚠️ Aucun calcul en mémoire. Effectuez d'abord un calcul dans les autres pages.")
@@ -787,31 +1046,35 @@ elif page == "📄  Note de Calcul PDF":
             st.write(f"  {i+1}. **{r.get('type','?')}**")
 
         st.markdown("---")
-        nom_pdf   = st.text_input("Nom du projet pour le PDF", st.session_state.projet_nom)
-        beton_pdf = st.selectbox("Béton", list(BETONS.keys()), index=1, key="b_pdf")
-        acier_pdf = st.selectbox("Acier", list(ACIERS.keys()), index=1, key="a_pdf")
+        nom_pdf   = st.text_input("Nom du projet pour le PDF" + REQ, st.session_state.projet_nom)
+        beton_pdf = st.selectbox("Béton" + REQ, list(BETONS.keys()), index=1, key="b_pdf")
+        acier_pdf = st.selectbox("Acier" + REQ, list(ACIERS.keys()), index=1, key="a_pdf")
 
         if st.button("📄 GÉNÉRER LA NOTE DE CALCUL PDF"):
-            with st.spinner("Génération en cours..."):
-                chemin = generer_pdf(st.session_state.resultats, nom_pdf, beton_pdf, acier_pdf)
-            if chemin:
-                with open(chemin, "rb") as f:
-                    st.download_button(
-                        label="⬇️ Télécharger la Note de Calcul PDF",
-                        data=f,
-                        file_name=f"note_calcul_{nom_pdf.replace(' ','_')}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-                st.success("✅ PDF généré avec succès !")
+            if not nom_pdf.strip():
+                st.error("⚠️ Le nom du projet est obligatoire.")
             else:
-                st.error("❌ Erreur. Vérifiez que reportlab est installé : pip install reportlab")
+                with st.spinner("Génération en cours..."):
+                    chemin = generer_pdf(st.session_state.resultats, nom_pdf, beton_pdf, acier_pdf)
+                if chemin:
+                    with open(chemin, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Télécharger la Note de Calcul PDF",
+                            data=f,
+                            file_name=f"note_calcul_{nom_pdf.replace(' ','_')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                    st.success("✅ PDF généré avec succès !")
+                else:
+                    st.error("❌ Erreur. Vérifiez que reportlab est installé : pip install reportlab")
 
         st.markdown("---")
         if st.button("🗑️ Vider l'historique des calculs"):
             st.session_state.resultats = []
+            st.session_state.last = {}
             st.success("✅ Historique vidé.")
 
 # ── FOOTER ──
 st.markdown("---")
-st.caption("🏗️ Génie Civil Pro v9 — BAEL 91 — Outil de pré-dimensionnement béton armé. Validation par ingénieur structure recommandée avant exécution.")
+st.caption("🏗️ Génie Civil Pro v10 — BAEL 91 — Outil de pré-dimensionnement béton armé. Validation par ingénieur structure recommandée avant exécution.")
