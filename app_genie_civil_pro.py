@@ -13,6 +13,13 @@ import os
 from string import Template
 from datetime import datetime
 
+try:                                  # module de calcul des planchers à corps creux (fichier corps_creux.py, même dossier)
+    import corps_creux as ccm
+    CC_OK = True
+except Exception:                     # pragma: no cover
+    ccm = None
+    CC_OK = False
+
 # ══════════════════════════════════════════════════════════════
 # CONSTANTES ET MATÉRIAUX
 # ══════════════════════════════════════════════════════════════
@@ -25,6 +32,7 @@ DIAMS = {
     6: 28.27, 8: 50.27, 10: 78.54, 12: 113.1,
     14: 153.94, 16: 201.06, 20: 314.16, 25: 490.87, 32: 804.25
 }
+DIAM_MAX = 14      # plus gros diamètre d'acier HA disponible sur le marché local : aucun choix ne dépasse HA14
 
 CORPS_CREUX = {
     "12+4": 2.20, "15+5": 2.50, "16+4": 2.80,
@@ -246,23 +254,39 @@ def fsu(a):
     return ACIERS[a] / GAMMA_S
 
 def barres(As, larg=None, nv=None):
+    """Choix de barres (poteaux/poutres) limité à HA14."""
     if As <= 0: return "—"
-    for di in [10, 12, 14, 16, 20, 25, 32]:
+    for di in [10, 12, 14]:
         sc = DIAMS[di] / 100
         for n in (nv or [3, 4, 5, 6, 8]):
             if n * sc < As: continue
             if larg and n > 1 and (larg - 6) / max(n - 1, 1) < 2.5: continue
             return f"{n}HA{di} ({round(n * sc, 2)} cm²)"
-    return f"As={round(As, 2)} cm²"
+    return f"As={round(As, 2)} cm² (> HA14 : augmenter le nombre de barres ou la section)"
+
+def choix_nappe(As, d_min, espacements, esp_pref=15.0, esp_min=10.0):
+    """Choix d'une nappe HA/espacement pour As (cm²/ml).
+    Logique : on cherche d'abord un espacement >= esp_pref (15 cm) avec le plus petit diamètre >= d_min,
+    en prenant à chaque fois l'espacement le PLUS LARGE possible ; sinon >= esp_min (10 cm) ; sinon tout espacement.
+    Retourne (diamètre, espacement, section fournie) ou None."""
+    for emin in (esp_pref, esp_min, 0.0):
+        for di, sm in sorted(DIAMS.items()):
+            if di < d_min or di > DIAM_MAX:
+                continue
+            sc = sm / 100
+            for e in sorted(espacements, reverse=True):          # du plus large au plus serré
+                if e >= emin and sc / (e / 100) >= As:
+                    return di, e, sc / (e / 100)
+    return None
 
 def barres_dalle(As):
+    """Dalle : HA8 minimum, espacement le plus large possible (max 25 cm)."""
     if As <= 0: return "—"
-    for di, sm in sorted(DIAMS.items()):
-        sc = sm / 100
-        for e in [7.5, 10, 12.5, 15, 17.5, 20, 25, 30]:
-            if sc / (e / 100) >= As:
-                return f"HA{di} / {e} cm  ({round(sc / (e / 100), 2)} cm²/ml)"
-    return f"As={round(As, 2)} cm²/ml"
+    ch = choix_nappe(As, 8, [25, 20, 17.5, 15, 12.5, 10, 7.5])
+    if ch:
+        di, e, sec = ch
+        return f"HA{di} / {e:g} cm  ({round(sec, 2)} cm²/ml)"
+    return f"As={round(As, 2)} cm²/ml (> HA14 / 7,5 cm : augmenter l'épaisseur)"
 
 # ══════════════════════════════════════════════════════════════
 # MOTEUR DE CALCUL BAEL 91  (LOGIQUE INCHANGÉE)
@@ -338,11 +362,158 @@ def calc_poutre(portee, G_ml, Q_ml, larg=20, beton="C25/30", acier="HA400"):
         "type": "POUTRE", "h": h, "d": round(d / 10, 1),
         "portee": portee, "larg": larg,
         "pu": round(pu, 2), "Mt": round(Mt, 2), "Vu": round(Vu, 2),
-        "As": round(As, 2), "disp": barres(As, larg),
+        "As": round(As, 2), "disp": barres_poutre(As, larg),
         "cadres": f"∅6 / {int(st_cm)} cm",
         "tau": round(tau, 3), "tau_lim": round(tau_lim, 2),
         "cis_ok": tau <= tau_lim, "beton": beton, "acier": acier
     }
+
+
+def barres_poutre(As, larg):
+    """Choix de barres tendues d'une poutre de largeur larg (cm), HA14 MAXIMUM.
+    1 lit d'abord (section fournie minimale) ; sinon 2 lits, avec As majorée de 6 % pour la perte de hauteur utile.
+    Enrobage 3 cm + cadre ∅6 ; distance libre entre barres >= max(Ø ; 2,5 cm)."""
+    if As <= 0: return "—"
+    utile = larg - 2 * 3.6
+    for lits in (1, 2):
+        need = As * (1.0 if lits == 1 else 1.06)
+        best = None
+        for di in (10, 12, 14):
+            sc = DIAMS[di] / 100
+            for n_lit in range(2, 7):
+                n = n_lit * lits
+                if n * sc < need - 1e-9:
+                    continue
+                if (utile - n_lit * di / 10) / (n_lit - 1) < max(di / 10, 2.5):
+                    continue
+                cand = (round(n * sc, 4), n, di)
+                if best is None or cand < best:
+                    best = cand
+        if best:
+            note = "" if lits == 1 else " — 2 lits"
+            return f"{best[1]}HA{best[2]} ({round(best[1] * DIAMS[best[2]] / 100, 2)} cm²){note}"
+    return f"As={round(As, 2)} cm² — dépasse 2 lits de HA14 : augmenter b ou la hauteur"
+
+
+def barres_poteau(A, b_cm, h_cm):
+    """Armatures longitudinales de poteau, HA14 MAXIMUM : barres réparties sur le pourtour
+    (enrobage 3 cm + cadre ∅6, distance moyenne entre barres >= max(Ø ; 2,5 cm))."""
+    if A <= 0: return "—"
+    perim = 2 * ((b_cm - 7.2) + (h_cm - 7.2))
+    for di in (10, 12, 14):
+        sc = DIAMS[di] / 100
+        for n in (4, 6, 8, 10, 12, 14, 16, 20, 24):
+            if n * sc < A - 1e-9:
+                continue
+            if perim / n < max(di / 10, 2.5) + di / 10:
+                continue
+            return f"{n}HA{di} ({round(n * sc, 2)} cm²)"
+    return f"As={round(A, 2)} cm² (> 24HA14 : augmenter la section du poteau)"
+
+
+def _cadres(tau, b, d, fc28, acier):
+    """Cadres ∅6 : espacement par la même formule que la poutre isostatique."""
+    At = 2 * DIAMS[6]; ftj = 0.6 + 0.06 * fc28
+    st_ = min(
+        (At * 0.8 * ACIERS[acier]) / (b * max(tau - 0.3 * ftj, 0.1)) if tau > 0.3 * ftj
+        else At * ACIERS[acier] / (0.4 * b),
+        0.9 * d, 400
+    )
+    return f"∅6 / {int(max(math.floor(st_ / 50) * 5, 5))} cm"
+
+
+def calc_poutre_continue(portees, G_ml, Q_ml, larg=20, beton="C25/30", acier="HA400",
+                         methode="auto", fiss_ok=True, solidaire=True):
+    """Poutre continue (2 à 6 travées) sous charges linéiques uniformes G_ml, Q_ml (kN/m).
+    Moments : méthode forfaitaire ou Caquot (minorée) du module corps_creux.py (validé). Section constante."""
+    if not CC_OK:
+        raise ValueError("Le fichier corps_creux.py est introuvable (méthodes forfaitaire/Caquot).")
+    if len(portees) < 2 or any(l <= 0 for l in portees):
+        raise ValueError("Une poutre continue demande au moins 2 travées de portées strictement positives.")
+    if G_ml <= 0 or Q_ml < 0:
+        raise ValueError("G doit être > 0 et Q >= 0 (kN/m).")
+    fc28 = BETONS[beton]; fbu_ = fbu(beton); fsu_ = fsu(acier); fe = ACIERS[acier]
+    ft28 = 0.6 + 0.06 * fc28
+    n = len(portees)
+
+    forf = ccm.moments_forfaitaire(portees, G_ml, Q_ml, 100.0, inertie_constante=True,
+                                   fissuration_peu_prejudiciable=fiss_ok)
+    cond = {k: v for k, v in forf["conditions"].items() if not k.startswith("Q <=")}
+    cond["Q <= 2G (charges linéiques)"] = Q_ml <= 2 * G_ml
+    if methode == "forfaitaire" and not all(cond.values()):
+        raise ValueError("Méthode forfaitaire imposée mais conditions non satisfaites : "
+                         + " ; ".join(k for k, v in cond.items() if not v) + ".")
+    if methode == "auto":
+        methode = "forfaitaire" if all(cond.values()) else ("caquot_minoree" if Q_ml <= 2 * G_ml else "caquot")
+
+    pu = 1.35 * G_ml + 1.5 * Q_ml
+    if methode == "forfaitaire":
+        Mt, Ma = forf["Mt"], forf["Ma"]
+        vf = [1.15, 1.15] if n == 2 else [1.10 if k in (0, n - 1) else 1.0 for k in range(n)]
+        V = [pu * portees[k] / 2 * vf[k] for k in range(n)]
+    else:
+        cq = ccm.moments_caquot(portees, 1.35 * G_ml, 1.5 * Q_ml, minoree=(methode == "caquot_minoree"))
+        Mt, Ma, V = cq["Mt"], cq["Ma"], cq["V"]
+
+    M0 = [pu * l**2 / 8 for l in portees]
+    Mu_appuis = []
+    for i in range(n + 1):
+        if i in (0, n):
+            Mu_appuis.append(0.15 * M0[0 if i == 0 else n - 1] if (methode == "forfaitaire" and solidaire) else 0.0)
+        else:
+            Mu_appuis.append(Ma[i])
+    Mmax = max(max(Mt), max(Mu_appuis))
+
+    b = larg * 10
+    d = math.sqrt(Mmax * 1e6 / (0.269 * b * fbu_))
+    h = max(math.ceil(d / 0.875 / 50) * 5, 20)
+    d = h * 10 - 50
+    Amin = 0.23 * b * d * ft28 / fe / 100
+
+    def As_(M):
+        if M <= 0: return 0.0
+        mu = M * 1e6 / (b * d**2 * fbu_)
+        a = 1.25 * (1 - math.sqrt(max(1 - 2 * mu, 0)))
+        return M * 1e6 / (d * (1 - 0.4 * a) * fsu_) / 100
+
+    import re
+    tau_lim = min(0.2 * fc28 / GAMMA_B, 5.0)
+    travees = []
+    for k in range(n):
+        As_k = max(As_(Mt[k]), Amin)
+        tau = V[k] * 1000 / (b * d)
+        travees.append({"k": k + 1, "portee": portees[k], "Mt": round(Mt[k], 2), "Vu": round(V[k], 2),
+                        "As": round(As_k, 2), "disp": barres_poutre(As_k, larg), "tau": round(tau, 3),
+                        "cis_ok": tau <= tau_lim, "cadres": _cadres(tau, b, d, fc28, acier)})
+    appuis = []
+    tau_su = 0.6 * 1.5**2 * ft28
+    for i in range(n + 1):
+        rive = i in (0, n)
+        As_i = max(As_(Mu_appuis[i]), Amin)
+        txt = barres_poutre(As_i, larg)
+        m = re.search(r"HA(\d+)", txt)
+        ls = None
+        if m:
+            dia = int(m.group(1))
+            ls = round(max(dia * fe / (4 * tau_su), dia * (40 if fe == 400 else 50)) / 10, 1)
+        if rive:
+            ref = portees[0 if i == 0 else n - 1]; div = 4
+            nature = ("rive — 0,15 M0 (poutre solidaire de l'appui, encastrement partiel)"
+                      if Mu_appuis[i] > 0 else "rive — armature minimale")
+        else:
+            ref = max(portees[i - 1], portees[i]); div = 4 if i in (1, n - 1) else 5
+            nature = "intermédiaire — moment calculé"
+        appuis.append({"appui": i + 1, "Mu": round(Mu_appuis[i], 2), "As": round(As_i, 2), "disp": txt,
+                       "ls_cm": ls, "prolong_cm": round(ref * 100 / div, 1), "nature": nature})
+    avert = []
+    if Q_ml > G_ml:
+        avert.append("Q > G : longueurs forfaitaires d'arrêt des barres (annexe E.1.3) non applicables — "
+                     "tracer les courbes enveloppes des moments.")
+    avert.append("Flèche non vérifiée. Charges linéiques supposées uniformes et identiques sur toutes les travées.")
+    return {"type": "POUTRE_CONTINUE", "portees": list(portees), "larg": larg, "h": h, "d": round(d / 10, 1),
+            "G": G_ml, "Q": Q_ml, "pu": round(pu, 2), "methode": methode, "conditions": cond,
+            "As_min": round(Amin, 2), "tau_lim": round(tau_lim, 2), "travees": travees, "appuis": appuis,
+            "avert": avert, "beton": beton, "acier": acier}
 
 
 def calc_poteau(h_libre, G, Q, beton="C25/30", acier="HA400", b_cm=None, h_cm=None):
@@ -367,14 +538,7 @@ def calc_poteau(h_libre, G, Q, beton="C25/30", acier="HA400", b_cm=None, h_cm=No
         dc = 6 if dl <= 14 else 8
         st = max(math.floor(min(15 * dl, 400) / 10 / 5) * 5, 10)
 
-        def br(A):
-            for di in [10, 12, 14, 16, 20]:
-                sc = DIAMS[di] / 100
-                for n in [4, 6, 8]:
-                    if n * sc >= A: return f"{n}HA{di} ({round(n * sc, 2)} cm²)"
-            return f"As={round(A, 2)} cm²"
-
-        disp = br(As / 100)
+        disp = barres_poteau(As / 100, b_cm, h_cm)
     else:
         a0 = 0.65 / (1 + 0.2 * (35 / 35)**2); alpha = a0 / 1.10
         tb = fc28 / (0.9 * GAMMA_B); ta = 0.01 * fe / GAMMA_S
@@ -393,7 +557,7 @@ def calc_poteau(h_libre, G, Q, beton="C25/30", acier="HA400", b_cm=None, h_cm=No
         dl = 10 if cote <= 20 else 12 if cote <= 25 else 14
         dc = 6 if dl <= 14 else 8
         st = max(math.floor(min(15 * dl, 400) / 10 / 5) * 5, 10)
-        disp = barres(As / 100, cote, [4, 6, 8])
+        disp = barres_poteau(As / 100, cote, cote)
         lam_b = lam_h = lam; b_cm = h_cm = cote
 
     return {
@@ -422,12 +586,12 @@ def calc_fondation(G, Q, cote_pot, q_sol, beton="C25/30", acier="HA400", type_so
     q_eff = (Nser + (cote / 100)**2 * (h_cm / 100) * 25) / (cote / 100)**2
 
     def fe(As):
-        for di, sm in sorted(DIAMS.items()):
-            sc = sm / 100
-            for e in [7.5, 10, 12.5, 15, 20, 25]:
-                if sc / (e / 100) >= As:
-                    return f"HA{di}/{e}cm ({round(sc / (e / 100), 2)} cm²/ml)"
-        return f"As={round(As, 2)} cm²/ml"
+        """Semelle : HA10 minimum, espacement le plus large possible (max 25 cm)."""
+        ch = choix_nappe(As, 10, [25, 20, 17.5, 15, 12.5, 10, 7.5])
+        if ch:
+            di, e, sec = ch
+            return f"HA{di}/{e:g}cm ({round(sec, 2)} cm²/ml)"
+        return f"As={round(As, 2)} cm²/ml (> HA14 / 7,5 cm : augmenter l'épaisseur)"
 
     return {
         "type": "FONDATION",
@@ -546,6 +710,82 @@ def generer_pdf(resultats, projet_nom, beton, acier):
                     ["Vérif ELS béton", f"σbc={el['sbc']} / {el['sbc_lim']} MPa  —  {'CONFORME' if el['els_ok'] else 'NON CONFORME'}"],
                 ]
                 c.append(tab(data, [7*cm, 10*cm]))
+
+            elif t == "CORPS_CREUX":
+                def _t(x):
+                    x = str(x)
+                    for a_, b_ in (("∅", "Ø"), ("≤", "<="), ("≥", ">="), ("σ", "sigma"), ("τ", "tau"),
+                                   ("Δ", "Delta"), ("λ", "lambda"), ("→", "->"), ("✓", "OK"), ("✗", "NON OK")):
+                        x = x.replace(a_, b_)
+                    return x
+                c.append(Paragraph("PLANCHER À CORPS CREUX — Poutrelles et hourdis (BAEL 91)", sH))
+                tp = "Coulée sur place" if el["type_poutrelle"] == "sur_place" else "Préfabriquée"
+                data = [["Paramètre", "Valeur"],
+                    ["Hourdis", f"{el['hourdis']}  —  hauteur totale {el['travees'][0]['h']} cm"],
+                    ["Entraxe / âme b0", f"{el['entraxe']:g} cm / {el['b0']:g} cm"],
+                    ["Poutrelle", tp],
+                    ["Portées", " ; ".join(f"{x:g} m" for x in el["portees"])],
+                    ["Charges G / Q", f"{el['G']} / {el['Q']} kN/m²"],
+                    ["Méthode des moments", el["methode"]],
+                ]
+                c.append(tab(data, [7*cm, 10*cm]))
+                for tv in el["travees"]:
+                    c.append(Paragraph(f"Travée {tv['travee']} — portée {el['portees'][tv['travee'] - 1]:g} m", sH))
+                    d2 = [["Paramètre", "Valeur"],
+                        ["Moments ELU", f"Mt={tv['Mt']} / Ma={tv['Ma']} / M0={tv['M0']} kN.m"],
+                        ["Table b / section", f"b={tv['b']} cm  —  {tv['mode']}"],
+                        ["Armatures en travée", f"As={tv['As_calc']} cm² (min {tv['As_min']})  —  {tv.get('disp_travee', '—')}"],
+                        ["Effort tranchant", f"Vu={tv['Vu']} kN  —  tau={tv['tau']} / {tv['tau_lim']} MPa  —  {'CONFORME' if tv['cis_ok'] else 'NON CONFORME'}"],
+                    ]
+                    if "sigma_bc" in tv:
+                        d2.append(["Vérif ELS béton", f"sigma_bc={tv['sigma_bc']} / {tv['sigma_lim']} MPa  —  {'CONFORME' if tv['els_ok'] else 'NON CONFORME'}"])
+                    if "fleche" in tv:
+                        fl = tv["fleche"]
+                        d2.append(["Flèche nuisible", f"Delta f={fl['delta_f']} mm / limite {fl['limite']} mm  —  {'CONFORME' if fl['ok'] else 'NON CONFORME'}"])
+                    if tv.get("treillis"):
+                        d2.append(["Treillis soudé", f"{tv['treillis']['choix_perp']} / {tv['treillis']['choix_par']}"])
+                    c.append(tab([[_t(x) for x in row] for row in d2], [7*cm, 10*cm]))
+                    for al in tv.get("alertes", []):
+                        c.append(Paragraph("Alerte : " + _t(al), sN))
+                if el["chapeaux"]:
+                    c.append(Paragraph("Chapeaux sur appuis", sH))
+                    d3 = [["Appui", "Mu (kN.m)", "Armatures", "ls (cm)", "Prolong. (cm)"]]
+                    for ch in el["chapeaux"]:
+                        d3.append([str(ch["appui"]), str(ch["Mu"]), _t(ch["barres"]),
+                                   str(ch["ancrage_ls_cm"]), str(ch["prolongement_depuis_nu_cm"])])
+                    c.append(tab(d3, [2*cm, 3*cm, 6*cm, 2.5*cm, 3.5*cm]))
+                    c.append(Paragraph(_t(el["chapeaux"][0]["note_ancrage"]), sN))
+                for al in el["avert"]:
+                    c.append(Paragraph("Avertissement : " + _t(al), sN))
+
+            elif t == "POUTRE_CONTINUE":
+                def _tp(x):
+                    x = str(x)
+                    for a_, b_ in (("∅", "Ø"), ("≤", "<="), ("≥", ">="), ("σ", "sigma"), ("τ", "tau"), ("→", "->")):
+                        x = x.replace(a_, b_)
+                    return x
+                c.append(Paragraph("POUTRE CONTINUE — Méthode forfaitaire / Caquot (BAEL 91)", sH))
+                data = [["Paramètre", "Valeur"],
+                    ["Portées", " ; ".join(f"{x:g} m" for x in el["portees"])],
+                    ["Section retenue", f"{el['larg']} × {el['h']} cm  (d = {el['d']} cm)"],
+                    ["Charges G / Q", f"{el['G']} / {el['Q']} kN/m  —  pu = {el['pu']} kN/m"],
+                    ["Méthode des moments", el["methode"]],
+                    ["As minimum", f"{el['As_min']} cm²"],
+                ]
+                c.append(tab(data, [7*cm, 10*cm]))
+                c.append(Paragraph("Travées", sH))
+                d2 = [["Travée", "Mt (kN.m)", "Armatures", "Vu (kN)", "tau (MPa)", "Cadres"]]
+                for tv in el["travees"]:
+                    d2.append([f"{tv['k']} ({tv['portee']:g} m)", str(tv["Mt"]), _tp(tv["disp"]), str(tv["Vu"]),
+                               f"{tv['tau']} {'OK' if tv['cis_ok'] else 'NON OK'}", _tp(tv["cadres"])])
+                c.append(tab(d2, [2.6*cm, 2.2*cm, 4.2*cm, 2*cm, 3*cm, 3*cm]))
+                c.append(Paragraph("Appuis (chapeaux)", sH))
+                d3 = [["Appui", "Mu (kN.m)", "Armatures", "ls (cm)", "Prolong. (cm)"]]
+                for a_ in el["appuis"]:
+                    d3.append([str(a_["appui"]), str(a_["Mu"]), _tp(a_["disp"]), str(a_["ls_cm"] or "—"), str(a_["prolong_cm"])])
+                c.append(tab(d3, [2*cm, 3*cm, 6*cm, 2.5*cm, 3.5*cm]))
+                for av in el["avert"]:
+                    c.append(Paragraph("Avertissement : " + _tp(av), sN))
 
             elif t == "POUTRE":
                 c.append(Paragraph("POUTRE — Cas isostatique, Pivot B (BAEL 91)", sH))
@@ -692,6 +932,147 @@ def placeholder_resultat():
     st.info("👈 Renseignez les paramètres puis cliquez sur le bouton de calcul pour afficher les résultats.")
 
 
+def _opt0(x):
+    """0 saisi par l'utilisateur = donnée non fournie."""
+    return None if not x else x
+
+
+def resultat_cc(hourdis, entraxe, typ, b0, portees, G, Q, beton, acier, G_j=None, methode="auto",
+                solidaire=True, inertie_cte=True, fiss_ok=True, Mrd_fab=None, As_pref=None, d_pref=None, precont=False):
+    """Calcule un plancher à corps creux (poutrelle isostatique ou continue) et renvoie un dictionnaire
+    prêt pour l'affichage, la mémoire de session et le PDF."""
+    fc28, fe_ = BETONS[beton], ACIERS[acier]
+    out = {"type": "CORPS_CREUX", "hourdis": hourdis, "entraxe": entraxe, "type_poutrelle": typ, "b0": b0,
+           "portees": list(portees), "G": G, "Q": Q, "beton": beton, "acier": acier,
+           "chapeaux": [], "avert": [], "conditions": {}, "methode": "isostatique"}
+    if len(portees) == 1:
+        r = ccm.calc_corps_creux(hourdis, entraxe, portees[0], G, Q, fc28, fe_, typ, b0,
+                                 As_prefab=As_pref, G_j=G_j, Mrd_fabricant=Mrd_fab, d_prefab=d_pref,
+                                 precontrainte=precont)
+        r["travee"] = 1
+        out["travees"] = [r]
+    else:
+        c = ccm.calc_poutrelle_continue(hourdis, entraxe, list(portees), G, Q, fc28, fe_, typ, b0, methode=methode,
+                                        G_j=G_j, As_prefab=As_pref, inertie_constante=inertie_cte,
+                                        fissuration_peu_prejudiciable=fiss_ok, Mrd_fabricant=Mrd_fab,
+                                        d_prefab=d_pref, precontrainte=precont, appui_rive_solidaire=solidaire)
+        out.update({"methode": c["methode"], "travees": c["travees"], "chapeaux": c["chapeaux"],
+                    "conditions": c["conditions_forfaitaire"], "avert": list(c["avertissements_chapeaux"])})
+    if typ == "prefabriquee":
+        out["avert"].append("Poutrelles préfabriquées : phase provisoire (avant coulage de la table), connexion et "
+                            "précontrainte NON calculées — se référer à la fiche technique du fabricant.")
+    return out
+
+
+def affiche_resultat_cc(r):
+    """Affichage Streamlit d'un résultat de plancher à corps creux."""
+    tr = r["travees"]
+    h_tot = tr[0]["h"]
+    invalide = [t for t in tr if t.get("flexion_valide") is False]
+    if invalide:
+        st.error("❌ " + str(invalide[0].get("statut", "Section insuffisante : augmenter la hauteur de l'hourdis ou b0.")))
+    else:
+        st.success(f"✅ Plancher {r['hourdis']} — hauteur totale **{h_tot} cm**, entraxe **{r['entraxe']:g} cm**")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Hauteur totale", f"{h_tot} cm")
+    c2.metric("Poutrelle", "Coulée sur place" if r["type_poutrelle"] == "sur_place" else "Préfabriquée")
+    c3.metric("Méthode", r["methode"])
+    if r["conditions"]:
+        with st.expander("📋 Conditions de la méthode forfaitaire", expanded=False):
+            for k, v in r["conditions"].items():
+                st.write(("✓ " if v else "✗ ") + k)
+    for t in tr:
+        with st.expander(f"📐 Travée {t['travee']} — portée {r['portees'][t['travee'] - 1]:g} m", expanded=(len(tr) == 1)):
+            st.write(f"**Moments ELU** : Mt = {t['Mt']} kN.m · Ma = {t['Ma']} kN.m · M0 = {t['M0']} kN.m")
+            st.write(f"**Largeur de table** b = {t['b']} cm · **Section** : {t['mode']}")
+            if t.get("disp_travee"):
+                st.write(f"**Armatures en travée** : {t['disp_travee']}  (As calculé = {t['As_calc']} cm², As min = {t['As_min']} cm²)")
+            if t.get("prefab_ok") is not None:
+                st.write(f"**Poutrelle préfabriquée** : Mrd = {t.get('Mrd')} kN.m — "
+                         + ("✓ suffisant" if t["prefab_ok"] else "✗ insuffisant"))
+            st.write(f"**Cisaillement** : τu = {t['tau']} MPa (limite {t['tau_lim']}) — "
+                     + ("✓ OK" if t["cis_ok"] else "✗ NON OK"))
+            if "sigma_bc" in t:
+                st.write(f"**ELS béton** : σbc = {t['sigma_bc']} MPa (limite {t['sigma_lim']}) — "
+                         + ("✓ OK" if t["els_ok"] else "✗ NON OK"))
+            if "fleche" in t:
+                f = t["fleche"]
+                disp = "dispense possible" if t.get("fleche_dispense_possible") else "calcul de flèche nécessaire"
+                st.write(f"**Flèche nuisible** Δf = {f['delta_f']} mm (limite {f['limite']} mm) — "
+                         + ("✓ OK" if f["ok"] else "✗ NON OK") + f"  · {disp}")
+            tz = t.get("treillis")
+            if tz:
+                st.write(f"**Treillis soudé de la table** : {tz['choix_perp']} (perpendiculaire) · {tz['choix_par']} (parallèle)")
+            for a in t.get("alertes", []):
+                st.warning(a)
+    if r["chapeaux"]:
+        with st.expander("🔝 Chapeaux sur appuis", expanded=False):
+            for c in r["chapeaux"]:
+                st.write(f"**Appui {c['appui']}** — {c['type']}")
+                st.write(f"Mu = {c['Mu']} kN.m → **{c['barres']}** (As = {c['As_req']} cm²) · "
+                         f"ancrage ls = {c['ancrage_ls_cm']} cm · prolongement depuis le nu = {c['prolongement_depuis_nu_cm']} cm")
+                if c.get("prolongement_convention"):
+                    st.caption(c["prolongement_convention"])
+            st.caption(c["note_ancrage"])
+    for a in r["avert"]:
+        st.warning(a)
+    st.caption("Outil de pré-dimensionnement : phase provisoire des poutrelles préfabriquées et poutrelles précontraintes "
+               "non calculées. Vérification par un ingénieur structure requise avant exécution.")
+
+
+def affiche_poutre_continue(r):
+    """Affichage Streamlit d'une poutre continue."""
+    ok = all(t["cis_ok"] for t in r["travees"])
+    (st.success if ok else st.error)(
+        f"{'✅' if ok else '❌'} Poutre continue {len(r['portees'])} travées — section **{r['larg']} × {r['h']} cm** "
+        f"· méthode **{r['methode']}**")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Section", f"{r['larg']}×{r['h']} cm")
+    c2.metric("pu ELU", f"{r['pu']} kN/m")
+    c3.metric("As min", f"{r['As_min']} cm²")
+    with st.expander("📋 Conditions de la méthode forfaitaire", expanded=False):
+        for k, v in r["conditions"].items():
+            st.write(("✓ " if v else "✗ ") + k)
+    for t in r["travees"]:
+        with st.expander(f"📐 Travée {t['k']} — portée {t['portee']:g} m", expanded=False):
+            st.write(f"**Mt** = {t['Mt']} kN.m → **{t['disp']}** (As = {t['As']} cm²)")
+            st.write(f"**Effort tranchant** Vu = {t['Vu']} kN · τu = {t['tau']} MPa (limite {r['tau_lim']}) — "
+                     + ("✓ OK" if t["cis_ok"] else "✗ NON OK"))
+            st.write(f"**Cadres** : {t['cadres']}")
+    with st.expander("🔝 Appuis (chapeaux)", expanded=False):
+        for a in r["appuis"]:
+            ls = f" · ancrage ls = {a['ls_cm']} cm" if a["ls_cm"] else ""
+            st.write(f"**Appui {a['appui']}** ({a['nature']}) — Mu = {a['Mu']} kN.m → **{a['disp']}** "
+                     f"(As = {a['As']} cm²){ls} · prolongement depuis le nu = {a['prolong_cm']} cm")
+        st.caption("Prolongement de rive : L/4 par convention ; appuis intermédiaires : annexe E.1.3 (L/4 voisin de rive, L/5 sinon).")
+    for a in r["avert"]:
+        st.warning(a)
+
+
+def bloc_cumul(prefixe):
+    """Saisie des charges cumulées G et Q (kN) : directe ou calculée automatiquement depuis G et Q de plancher."""
+    mode = st.radio("Mode de saisie des charges" + REQ,
+                    ["Saisie directe (G et Q cumulés)", "Calcul automatique depuis G et Q de plancher"],
+                    key=f"mode_{prefixe}")
+    if mode.startswith("Saisie"):
+        G = st.number_input("G cumulé (kN)" + REQ, 0.0, 5000.0, 180.0, 5.0, key=f"Gc_{prefixe}")
+        Q = st.number_input("Q cumulé (kN)" + REQ, 0.0, 3000.0, 45.0, 5.0, key=f"Qc_{prefixe}")
+        return G, Q
+    g_def = float(st.session_state.charges["G"]) if st.session_state.charges["G"] > 0 else 5.5
+    q_def = float(st.session_state.charges["Q"]) if st.session_state.charges["Q"] > 0 else 2.0
+    g_pl = st.number_input("G de plancher (kN/m²)" + REQ, 0.5, 30.0, g_def, 0.1, key=f"Gp_{prefixe}")
+    q_pl = st.number_input("Q de plancher (kN/m²)" + REQ, 0.5, 10.0, q_def, 0.1, key=f"Qp_{prefixe}")
+    surf = st.number_input("Surface reprise par niveau (m²)" + REQ, 1.0, 200.0, 20.0, 0.5, key=f"S_{prefixe}",
+                           help="Surface de plancher reprise par ce poteau à chaque niveau (surface d'influence).")
+    niv = st.number_input("Nombre de niveaux repris" + REQ, 1, 15, 3, key=f"N_{prefixe}")
+    maj = st.number_input("Majoration poids propre poutres/poteaux (%)" + OPT, 0, 50, 0, key=f"M_{prefixe}")
+    G = round(g_pl * surf * niv * (1 + maj / 100), 1)
+    Q = round(q_pl * surf * niv, 1)
+    st.info(f"G cumulé = **{G} kN** · Q cumulé = **{Q} kN**  \n"
+            "Q cumulé sans dégression des charges d'exploitation (hypothèse prudente).")
+    return G, Q
+
+
 # ── SIDEBAR ──
 with st.sidebar:
     st.markdown("## 🏗️ Génie Civil Pro")
@@ -708,6 +1089,7 @@ with st.sidebar:
     page = st.radio("**Navigation**", [
         "⚖️  Calcul G et Q",
         "📐  Dalle",
+        "🧱  Plancher corps creux",
         "🔩  Poutre",
         "🏛️  Poteau",
         "🏗️  Fondation",
@@ -867,49 +1249,160 @@ elif page == "📐  Dalle":
 
 
 # ════════════════════════════════════════════════════════════
-# PAGE 3 — POUTRE
+# PAGE — PLANCHER À CORPS CREUX
 # ════════════════════════════════════════════════════════════
-elif page == "🔩  Poutre":
-    entete("🔩 Calcul de Poutre — BAEL 91 (Pivot B)",
-           "Dimensionnement d'une poutre isostatique sous charge uniformément répartie.")
+elif page == "🧱  Plancher corps creux":
+    entete("🧱 Plancher à corps creux — Poutrelles + hourdis (BAEL 91)",
+           "Poutrelles isostatiques ou continues (méthode forfaitaire / Caquot), choix de l'hourdis, de l'entraxe et du type de poutrelle.")
+    if not CC_OK:
+        st.error("Le fichier **corps_creux.py** est introuvable : placez-le dans le même dossier que l'application.")
+        st.stop()
     col1, col2 = st.columns([1, 1.3])
 
     with col1:
         st.subheader("Paramètres")
-        portee = st.number_input("Portée (m)" + REQ, 1.0, 20.0, 5.0, 0.1)
+        hourdis = st.selectbox("Hourdis (corps creux + table)" + REQ, list(ccm.HOURDIS.keys()), index=2,
+                               help="Exemple 16+4 : corps creux de 16 cm + dalle de compression de 4 cm.")
+        entraxe = st.number_input("Entraxe des poutrelles (cm)" + REQ, 25.0, 79.0, 60.0, 1.0)
+        typ_lbl = st.radio("Type de poutrelle" + REQ, ["Coulée sur place", "Préfabriquée"])
+        typ = "sur_place" if typ_lbl.startswith("Coulée") else "prefabriquee"
+        b0 = st.number_input("Largeur de l'âme b0 (cm)" + REQ, 8.0, 30.0, 10.0, 1.0)
+        n_tr = st.selectbox("Nombre de travées" + REQ, [1, 2, 3, 4, 5, 6], index=0)
+        portees = [st.number_input(f"Portée travée {i + 1} (m)" + REQ, 1.0, 12.0, 3.5, 0.1, key=f"ptr_{i}")
+                   for i in range(n_tr)]
+        G_c = st.number_input("G (kN/m²)" + REQ, 0.5, 30.0,
+                              float(st.session_state.charges["G"]) if st.session_state.charges["G"] > 0 else 5.5, 0.1, key="G_cc")
+        Q_c = st.number_input("Q (kN/m²)" + REQ, 0.5, 10.0,
+                              float(st.session_state.charges["Q"]) if st.session_state.charges["Q"] > 0 else 1.5, 0.1, key="Q_cc")
+        G_j = st.number_input("G avant pose des cloisons/revêtements (kN/m²)" + OPT, 0.0, 30.0, 0.0, 0.1,
+                              help="Pour la flèche. Laissé à 0 : hypothèse prudente.")
+        beton = st.selectbox("Béton" + REQ, list(BETONS.keys()), index=1, key="b_cc")
+        acier = st.selectbox("Acier" + REQ, list(ACIERS.keys()), index=1, key="a_cc")
+
+        methode, solidaire, inertie_cte, fiss_ok = "auto", True, True, True
+        if n_tr > 1:
+            with st.expander("⚙️ Poutrelle continue — options", expanded=False):
+                methode = st.selectbox("Méthode de calcul des moments",
+                                       ["auto", "forfaitaire", "caquot_minoree", "caquot"],
+                                       help="auto : forfaitaire si toutes ses conditions sont remplies, sinon Caquot (minorée si Q <= max(2G ; 5)).")
+                inertie_cte = st.checkbox("Inertie constante dans toutes les travées", True)
+                fiss_ok = st.checkbox("Fissuration peu préjudiciable", True)
+                solidaire = st.checkbox("Poutrelle solidaire de son appui de rive (poteau ou poutre)", True,
+                                        help="Coché : chapeau de rive dimensionné pour 0,15 M0 (encastrement partiel).")
+        Mrd_fab = As_pref = d_pref = None
+        precont = False
+        if typ == "prefabriquee":
+            st.warning("Poutrelle préfabriquée : fournissez la donnée du fabricant (moment résistant OU section d'acier).")
+            Mrd_fab = _opt0(st.number_input("Moment résistant fabricant Mrd (kN.m)" + OPT, 0.0, 200.0, 0.0, 0.1))
+            As_pref = _opt0(st.number_input("Section d'acier de la poutrelle (cm²)" + OPT, 0.0, 30.0, 0.0, 0.05))
+            d_pref = _opt0(st.number_input("Hauteur utile d de la poutrelle (cm)" + OPT, 0.0, 60.0, 0.0, 0.5))
+            precont = st.checkbox("Poutrelle précontrainte (non calculée par l'outil)", False)
+        calc = st.button("⚙️ CALCULER LE PLANCHER")
+
+    with col2:
+        st.subheader("Résultats")
+        if calc and projet_valide():
+            try:
+                r = resultat_cc(hourdis, entraxe, typ, b0, portees, G_c, Q_c, beton, acier, _opt0(G_j), methode,
+                                solidaire, inertie_cte, fiss_ok, Mrd_fab, As_pref, d_pref, precont)
+                st.session_state.resultats.append(r)
+                st.session_state.last["corps_creux"] = r
+                st.toast("Plancher calculé", icon="✅")
+            except ValueError as e:
+                st.session_state.last.pop("corps_creux", None)
+                st.error(f"⚠️ {e}")
+
+        r = st.session_state.last.get("corps_creux")
+        if r:
+            affiche_resultat_cc(r)
+            st.caption("💾 Résultat sauvegardé pour la note de calcul globale")
+            bouton_pdf("corps_creux", [r], r["beton"], r["acier"])
+        else:
+            placeholder_resultat()
+
+
+# ════════════════════════════════════════════════════════════
+# PAGE 3 — POUTRE
+# ════════════════════════════════════════════════════════════
+elif page == "🔩  Poutre":
+    entete("🔩 Calcul de Poutre — BAEL 91 (Pivot B)",
+           "Poutre isostatique ou continue (2 à 6 travées, méthode forfaitaire / Caquot) sous charge uniformément répartie.")
+    col1, col2 = st.columns([1, 1.3])
+
+    with col1:
+        st.subheader("Paramètres")
+        mode_p = st.radio("Type de poutre" + REQ, ["Isostatique (1 travée)", "Continue (2 à 6 travées)"], key="mode_poutre")
+        continue_ = mode_p.startswith("Continue")
+        if continue_:
+            n_pc = st.selectbox("Nombre de travées" + REQ, [2, 3, 4, 5, 6], key="n_pc")
+            portees_pc = [st.number_input(f"Portée travée {i + 1} (m)" + REQ, 1.0, 20.0, 5.0, 0.1, key=f"pc_{i}")
+                          for i in range(n_pc)]
+            portee = None
+        else:
+            portee = st.number_input("Portée (m)" + REQ, 1.0, 20.0, 5.0, 0.1)
         G_ml   = st.number_input("G réparti (kN/m)" + REQ, 0.0, 200.0, 22.0, 0.5)
         Q_ml   = st.number_input("Q réparti (kN/m)" + REQ, 0.0, 100.0, 8.0, 0.5)
         larg   = st.number_input("Largeur imposée b (cm)" + REQ, 15, 60, 20)
         beton  = st.selectbox("Béton" + REQ, list(BETONS.keys()), index=1, key="b_p")
         acier  = st.selectbox("Acier" + REQ, list(ACIERS.keys()), index=1, key="a_p")
+        methode_pc, fiss_pc, solid_pc = "auto", True, True
+        if continue_:
+            with st.expander("⚙️ Poutre continue — options", expanded=False):
+                methode_pc = st.selectbox("Méthode de calcul des moments",
+                                          ["auto", "forfaitaire", "caquot_minoree", "caquot"], key="m_pc",
+                                          help="auto : forfaitaire si ses conditions sont remplies, sinon Caquot (minorée si Q <= 2G).")
+                fiss_pc = st.checkbox("Fissuration peu préjudiciable", True, key="f_pc")
+                solid_pc = st.checkbox("Poutre solidaire de ses appuis de rive (poteaux)", True, key="s_pc",
+                                       help="Coché : chapeau de rive dimensionné pour 0,15 M0.")
         calc   = st.button("⚙️ CALCULER LA POUTRE")
 
     with col2:
         st.subheader("Résultats")
         if calc and projet_valide():
-            r = calc_poutre(portee, G_ml, Q_ml, larg, beton, acier)
-            r["type"] = "POUTRE"
-            st.session_state.resultats.append(r)
-            st.session_state.last["poutre"] = r
-            st.toast("Poutre calculée", icon="✅")
-
-        r = st.session_state.last.get("poutre")
-        if r:
-            st.success(f"✅ Section retenue : **{r['larg']} × {r['h']} cm**")
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Section", f"{r['larg']}×{r['h']} cm")
-            c2.metric("Moment Mt", f"{r['Mt']} kN.m")
-            c3.metric("Effort Vu", f"{r['Vu']} kN")
-            st.write(f"**Ferraillage longitudinal** : {r['disp']}  (As = {r['As']} cm²)")
-            st.write(f"**Cadres transversaux** : {r['cadres']}")
-            if r['cis_ok']:
-                st.success(f"✓ Cisaillement OK : τu = {r['tau']} ≤ τlim = {r['tau_lim']} MPa")
+            if continue_:
+                try:
+                    r = calc_poutre_continue(portees_pc, G_ml, Q_ml, larg, beton, acier, methode_pc, fiss_pc, solid_pc)
+                    st.session_state.resultats.append(r)
+                    st.session_state.last["poutre_continue"] = r
+                    st.session_state.last["poutre_mode"] = "continue"
+                    st.toast("Poutre continue calculée", icon="✅")
+                except ValueError as e:
+                    st.session_state.last.pop("poutre_continue", None)
+                    st.error(f"⚠️ {e}")
             else:
-                st.error(f"✗ Cisaillement NON OK : τu = {r['tau']} > τlim = {r['tau_lim']} MPa")
-            st.caption("💾 Résultat sauvegardé pour la note de calcul globale")
-            bouton_pdf("poutre", [r], r["beton"], r["acier"])
+                r = calc_poutre(portee, G_ml, Q_ml, larg, beton, acier)
+                r["type"] = "POUTRE"
+                st.session_state.resultats.append(r)
+                st.session_state.last["poutre"] = r
+                st.session_state.last["poutre_mode"] = "iso"
+                st.toast("Poutre calculée", icon="✅")
+
+        if continue_:
+            r = st.session_state.last.get("poutre_continue")
+            if r:
+                affiche_poutre_continue(r)
+                st.caption("💾 Résultat sauvegardé pour la note de calcul globale")
+                bouton_pdf("poutre_continue", [r], r["beton"], r["acier"])
+            else:
+                placeholder_resultat()
         else:
-            placeholder_resultat()
+            r = st.session_state.last.get("poutre")
+            if r:
+                st.success(f"✅ Section retenue : **{r['larg']} × {r['h']} cm**")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Section", f"{r['larg']}×{r['h']} cm")
+                c2.metric("Moment Mt", f"{r['Mt']} kN.m")
+                c3.metric("Effort Vu", f"{r['Vu']} kN")
+                st.write(f"**Ferraillage longitudinal** : {r['disp']}  (As = {r['As']} cm²)")
+                st.write(f"**Cadres transversaux** : {r['cadres']}")
+                if r['cis_ok']:
+                    st.success(f"✓ Cisaillement OK : τu = {r['tau']} ≤ τlim = {r['tau_lim']} MPa")
+                else:
+                    st.error(f"✗ Cisaillement NON OK : τu = {r['tau']} > τlim = {r['tau_lim']} MPa")
+                st.caption("💾 Résultat sauvegardé pour la note de calcul globale")
+                bouton_pdf("poutre", [r], r["beton"], r["acier"])
+            else:
+                placeholder_resultat()
 
 
 # ════════════════════════════════════════════════════════════
@@ -928,8 +1421,7 @@ elif page == "🏛️  Poteau":
             b_cm   = st.number_input("b (petite dimension, cm)" + REQ, 15, 100, 20)
             h_cm_p = st.number_input("h (grande dimension, cm)" + REQ, b_cm, 150, 30)
         h_libre = st.number_input("Hauteur libre (m)" + REQ, 2.0, 10.0, 3.2, 0.1)
-        G_pot   = st.number_input("G cumulé (kN)" + REQ, 0.0, 5000.0, 180.0, 5.0)
-        Q_pot   = st.number_input("Q cumulé (kN)" + REQ, 0.0, 3000.0, 45.0, 5.0)
+        G_pot, Q_pot = bloc_cumul("pot")
         beton   = st.selectbox("Béton" + REQ, list(BETONS.keys()), index=1, key="b_po")
         acier   = st.selectbox("Acier" + REQ, list(ACIERS.keys()), index=1, key="a_po")
         calc    = st.button("⚙️ CALCULER LE POTEAU")
@@ -979,8 +1471,7 @@ elif page == "🏗️  Fondation":
 
     with col1:
         st.subheader("Paramètres")
-        G_f      = st.number_input("G cumulé (kN)" + REQ, 0.0, 5000.0, 180.0, 5.0)
-        Q_f      = st.number_input("Q cumulé (kN)" + REQ, 0.0, 3000.0, 45.0, 5.0)
+        G_f, Q_f = bloc_cumul("fond")
         cote_pot = st.number_input("Côté poteau (cm)" + REQ, 15, 100, 25)
         q_sol    = st.number_input("Contrainte sol (kPa)" + REQ, 50.0, 2000.0, 200.0, 10.0)
         type_sol = st.radio("Type contrainte sol" + REQ, ["admissible", "rupture"])
@@ -1032,8 +1523,23 @@ elif page == "📋  Projet Complet":
         lx_p    = st.number_input("Portée lx (m)" + REQ, 2.0, 15.0, 4.2, 0.1)
         ly_p    = st.number_input("Portée ly (m)" + REQ, lx_p, 20.0, 5.1, 0.1)
         h_niv   = st.number_input("Hauteur par niveau (m)" + REQ, 2.5, 5.0, 3.2, 0.1)
-        G_proj  = st.number_input("G dalle (kN/m²)" + REQ, 0.5, 30.0, 5.5, 0.1)
-        Q_proj  = st.number_input("Q dalle (kN/m²)" + REQ, 0.5, 10.0, 2.0, 0.1)
+        poutre_p = st.radio("Poutre porteuse" + REQ, ["Isostatique (1 travée)", "Continue (travées identiques)"], key="pt_pr")
+        n_pc_p = 1
+        if poutre_p.startswith("Continue"):
+            n_pc_p = st.selectbox("Nombre de travées de la poutre" + REQ, [2, 3, 4, 5, 6], key="npc_pr",
+                                  help="Toutes les travées ont la portée de la poutre porteuse (ly en corps creux, lx en dalle pleine).")
+        plancher_p = st.radio("Type de plancher" + REQ, ["Dalle pleine", "Corps creux (poutrelles)"])
+        if plancher_p.startswith("Corps") and CC_OK:
+            hourdis_p = st.selectbox("Hourdis" + REQ, list(ccm.HOURDIS.keys()), index=2, key="h_pr")
+            entraxe_p = st.number_input("Entraxe des poutrelles (cm)" + REQ, 25.0, 79.0, 60.0, 1.0, key="e_pr")
+            typ_p_lbl = st.radio("Type de poutrelle" + REQ, ["Coulée sur place", "Préfabriquée"], key="t_pr")
+            if typ_p_lbl.startswith("Préf"):
+                st.warning("Préfabriquée : fournissez la donnée du fabricant (obligatoire).")
+                Mrd_pr = _opt0(st.number_input("Moment résistant fabricant Mrd (kN.m)" + REQ, 0.0, 200.0, 0.0, 0.1, key="mrd_pr"))
+            else:
+                Mrd_pr = None
+        G_proj  = st.number_input("G plancher (kN/m²)" + REQ, 0.5, 30.0, 5.5, 0.1)
+        Q_proj  = st.number_input("Q plancher (kN/m²)" + REQ, 0.5, 10.0, 2.0, 0.1)
         q_sol_p = st.number_input("Contrainte sol (kPa)" + REQ, 50.0, 2000.0, 200.0, 10.0)
         type_sol_p = st.radio("Type contrainte sol" + REQ, ["admissible", "rupture"])
         beton_p = st.selectbox("Béton" + REQ, list(BETONS.keys()), index=1, key="b_pr")
@@ -1052,21 +1558,44 @@ elif page == "📋  Projet Complet":
             G_pot_p = G_proj * S_trib * n_niv
             Q_pot_p = Q_proj * S_trib * n_niv
 
-            rd  = calc_dalle(lx_p, ly_p, G_proj, Q_proj, beton_p, acier_p)
-            rp  = calc_poutre(lx_p, G_proj * ly_p / 2, Q_proj * ly_p / 2, 20, beton_p, acier_p)
-            rpo = calc_poteau(h_niv, G_pot_p, Q_pot_p, beton_p, acier_p, b_p, h_p)
-            cote_pot_calc = rpo.get("cote") or rpo.get("b_cm", 25)
-            rf  = calc_fondation(G_pot_p, Q_pot_p, cote_pot_calc, q_sol_p, beton_p, acier_p, type_sol_p)
+            cc_projet = plancher_p.startswith("Corps") and CC_OK
+            erreur_cc = None
+            if cc_projet:
+                try:
+                    # poutrelles portant dans la petite portée lx ; les poutres porteuses (portée ly) reprennent lx/2
+                    rd = resultat_cc(hourdis_p, entraxe_p, "sur_place" if typ_p_lbl.startswith("Coul") else "prefabriquee",
+                                     10.0, [lx_p], G_proj, Q_proj, beton_p, acier_p, Mrd_fab=Mrd_pr)
+                    if n_pc_p > 1:
+                        rp = calc_poutre_continue([ly_p] * n_pc_p, G_proj * lx_p / 2, Q_proj * lx_p / 2, 20, beton_p, acier_p)
+                    else:
+                        rp = calc_poutre(ly_p, G_proj * lx_p / 2, Q_proj * lx_p / 2, 20, beton_p, acier_p)
+                except ValueError as e:
+                    erreur_cc = str(e)
+            else:
+                rd  = calc_dalle(lx_p, ly_p, G_proj, Q_proj, beton_p, acier_p)
+                if n_pc_p > 1:
+                    try:
+                        rp = calc_poutre_continue([lx_p] * n_pc_p, G_proj * ly_p / 2, Q_proj * ly_p / 2, 20, beton_p, acier_p)
+                    except ValueError as e:
+                        erreur_cc = str(e)
+                else:
+                    rp  = calc_poutre(lx_p, G_proj * ly_p / 2, Q_proj * ly_p / 2, 20, beton_p, acier_p)
+            if erreur_cc:
+                st.error(f"⚠️ {erreur_cc}")
+            else:
+                rpo = calc_poteau(h_niv, G_pot_p, Q_pot_p, beton_p, acier_p, b_p, h_p)
+                cote_pot_calc = rpo.get("cote") or rpo.get("b_cm", 25)
+                rf  = calc_fondation(G_pot_p, Q_pot_p, cote_pot_calc, q_sol_p, beton_p, acier_p, type_sol_p)
 
-            for r, t in [(rd,"DALLE"),(rp,"POUTRE"),(rpo,"POTEAU"),(rf,"FONDATION")]:
-                r["type"] = t
-                st.session_state.resultats.append(r)
+                for r, t in [(rd,"CORPS_CREUX" if cc_projet else "DALLE"),(rp,"POUTRE_CONTINUE" if n_pc_p > 1 else "POUTRE"),(rpo,"POTEAU"),(rf,"FONDATION")]:
+                    r["type"] = t
+                    st.session_state.resultats.append(r)
 
-            st.session_state.last["projet"] = {
-                "rd": rd, "rp": rp, "rpo": rpo, "rf": rf,
-                "beton": beton_p, "acier": acier_p,
-            }
-            st.toast("Projet complet calculé", icon="✅")
+                st.session_state.last["projet"] = {
+                    "rd": rd, "rp": rp, "rpo": rpo, "rf": rf,
+                    "beton": beton_p, "acier": acier_p, "cc": cc_projet,
+                }
+                st.toast("Projet complet calculé", icon="✅")
 
         pj = st.session_state.last.get("projet")
         if pj:
@@ -1076,8 +1605,12 @@ elif page == "📋  Projet Complet":
             sect = f"{rpo['b_cm']}×{rpo['h_cm']}cm" if rpo.get("rect") else f"{rpo['cote']}×{rpo['cote']}cm"
 
             col_a, col_b = st.columns(2)
-            col_a.metric("Dalle", f"e={rd['h']}cm")
-            col_b.metric("Poutre", f"{rp['larg']}×{rp['h']}cm")
+            if pj.get("cc"):
+                col_a.metric("Plancher corps creux", f"{rd['hourdis']} — h={rd['travees'][0]['h']}cm")
+            else:
+                col_a.metric("Dalle", f"e={rd['h']}cm")
+            col_b.metric("Poutre" + (f" continue ({len(rp['portees'])} tr.)" if rp.get("type") == "POUTRE_CONTINUE" else ""),
+                         f"{rp['larg']}×{rp['h']}cm")
             col_a.metric("Poteau", sect)
             col_b.metric("Fondation", f"{rf['cote']}×{rf['cote']}×{rf['h']}cm")
 
@@ -1133,4 +1666,4 @@ elif page == "📄  Note de Calcul PDF":
 
 # ── FOOTER ──
 st.markdown("---")
-st.caption("🏗️ Génie Civil Pro v10 — BAEL 91 — Outil de pré-dimensionnement béton armé. Validation par ingénieur structure recommandée avant exécution.")
+st.caption("🏗️ Génie Civil Pro v11 — BAEL 91 — Outil de pré-dimensionnement béton armé. Validation par ingénieur structure recommandée avant exécution.")
